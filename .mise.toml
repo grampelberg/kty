@@ -1,0 +1,6 @@
+[tools]
+"cargo:cargo-binstall" = "latest"
+"cargo:cargo-outdated" = "latest"
+"npm:prettier" = "latest"
+"npm:prettier-plugin-toml" = "latest"
+just = "latest"

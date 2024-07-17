@@ -1,0 +1,48 @@
+[package]
+name = "kuberift"
+version.workspace = true
+authors.workspace = true
+description = "SSH into a Kubernetes cluster"
+documentation.workspace = true
+license-file.workspace = true
+edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Thomas Rampelberg <thomas@saunter.org>"]
+documentation = "https://docs.rs/kubrift"
+edition = "2021"
+license-file = "LICENSE"
+repository = "https://github.com/grampelberg/kuberift"
+keywords = ["cli"]
+categories = ["command-line-interface"]
+
+[dependencies]
+
+[lints]
+workspace = true
+
+[profile.dev]
+debug = 0
+split-debuginfo = "unpacked"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+keyword-idents = "warn"
+let-underscore = "warn"
+rust-2024-compatibility = "warn"
+unused_crate_dependencies = "warn"
+
+[workspace.lints.clippy]
+multiple_crate_versions = "warn"
+cargo = "warn"
+complexity = "warn"
+correctness = "warn"
+pedantic = "warn"
+perf = "warn"
+style = "warn"
+suspicious = "warn"
+missing_errors_doc = "allow"
