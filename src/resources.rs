@@ -7,6 +7,7 @@ use kube::{
     api::{Api, PatchParams, PostParams, ResourceExt},
     CustomResourceExt,
 };
+use tracing::info;
 
 use crate::identity;
 
@@ -18,6 +19,8 @@ pub(crate) async fn create(
     client: &Api<CustomResourceDefinition>,
     update: bool,
 ) -> Result<Vec<CustomResourceDefinition>> {
+    info!(update = update, "updating CRD definitions...");
+
     let results: Vec<_> = futures::stream::iter(all())
         .map(|resource| async move {
             if update {

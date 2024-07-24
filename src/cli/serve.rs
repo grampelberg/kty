@@ -9,12 +9,13 @@ use itertools::Itertools;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{api::Api, Client};
 use russh::{server::Config, MethodSet};
+use tracing::info;
 
-use crate::{openid, resources, ssh};
+use crate::{openid, openid::Fetch, resources, ssh};
 
 static AUDIENCE: &str = "https://kuberift.com";
 static CLIENT_ID: &str = "kYQRVgyf2fy8e4zw7xslOmPaLVz3jIef";
-static JWKS_URL: &str = "https://bigtop.auth0.com/.well-known/openid-configuration";
+static OID_CONFIG_URL: &str = "https://bigtop.auth0.com/.well-known/openid-configuration";
 
 #[derive(Parser, Container)]
 pub struct Serve {
@@ -30,8 +31,11 @@ pub struct Serve {
     audience: String,
     #[clap(long, default_value = CLIENT_ID)]
     client_id: String,
-    #[clap(long, default_value = JWKS_URL)]
+    #[clap(long, default_value = OID_CONFIG_URL)]
     openid_configuration: String,
+    /// Field of the id_token to use as the user's ID.
+    #[clap(long, default_value = "email")]
+    claim: String,
 
     #[clap(long, default_value = "127.0.0.1:2222")]
     address: ListenAddr,
@@ -43,10 +47,10 @@ pub struct Serve {
 #[async_trait::async_trait]
 impl Command for Serve {
     async fn run(&self) -> Result<()> {
-        if !self.no_create {
-            let client: &Api<CustomResourceDefinition> = &Api::all(Client::try_default().await?);
+        let client = Client::try_default().await?;
 
-            resources::create(client, true).await?;
+        if !self.no_create {
+            resources::create(&Api::all(client.clone()), true).await?;
         }
 
         let server_cfg = Config {
@@ -61,9 +65,18 @@ impl Command for Serve {
             ..Default::default()
         };
 
+        let cfg = openid::Config::fetch(&self.openid_configuration).await?;
+        let jwks = cfg.jwks().await?;
+
         ssh::UIServer::new(
-            openid::Provider::new(&self.audience, &self.client_id, &self.openid_configuration)
-                .await?,
+            client,
+            openid::ProviderBuilder::default()
+                .audience(self.audience.clone())
+                .claim(self.claim.clone())
+                .client_id(self.client_id.clone())
+                .config(cfg)
+                .jwks(jwks)
+                .build()?,
         )
         .run(server_cfg, self.address.clone().into())
         .await
