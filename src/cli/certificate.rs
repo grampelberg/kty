@@ -1,15 +1,12 @@
 use std::time::Duration;
 
-use backon::{
-    ConstantBackoff, ConstantBuilder, ExponentialBuilder, Retryable, RetryableWithContext,
-};
-use base64::{engine::general_purpose::URL_SAFE, prelude::*};
+use backon::{ConstantBuilder, Retryable};
 use cata::{output::Format, Command, Container};
 use clap::Parser;
 use color_eyre::{Section, SectionExt};
-use eyre::{Context, Result};
+use eyre::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use itertools::{Itertools, Tuples};
+use itertools::Itertools;
 use jsonwebtoken::{
     decode, decode_header,
     jwk::{AlgorithmParameters, JwkSet},

@@ -1,5 +1,8 @@
 //! # kuberift
 mod cli;
+mod identity;
+mod openid;
+mod resources;
 mod ssh;
 
 use cata::execute;
