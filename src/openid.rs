@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use color_eyre::{Section, SectionExt};
+use derive_builder::Builder;
 use eyre::Result;
 use itertools::Itertools;
 use jsonwebtoken::{jwk, jwk::JwkSet};
@@ -38,54 +39,60 @@ where
 pub type Identity = serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize)]
-struct Config {
+pub struct Config {
     token_endpoint: String,
     device_authorization_endpoint: String,
     jwks_uri: String,
 }
 
-impl Config {
-    pub async fn new(url: &str) -> Result<Self> {
-        let cfg = reqwest::Client::new()
+#[async_trait::async_trait]
+impl Fetch for Config {
+    type Output = Self;
+}
+
+#[async_trait::async_trait]
+pub trait Fetch {
+    type Output: for<'de> Deserialize<'de>;
+
+    async fn fetch(url: &str) -> Result<Self::Output> {
+        let data = reqwest::Client::new()
             .get(url)
             .send()
             .await?
             .error_for_status()?
-            .json::<Self>()
+            .text()
             .await?;
 
-        Ok(cfg)
+        let content: Self::Output =
+            serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_str(&data))
+                .with_section(move || data.header("Response:"))?;
+
+        Ok(content)
     }
 }
 
-#[derive(Clone, Debug)]
+#[async_trait::async_trait]
+impl Fetch for JwkSet {
+    type Output = Self;
+}
+
+impl Config {
+    pub async fn jwks(&self) -> Result<JwkSet> {
+        JwkSet::fetch(&self.jwks_uri).await
+    }
+}
+
+#[derive(Clone, Debug, Builder)]
 pub struct Provider {
     audience: String,
-    config: Config,
     client_id: String,
+    claim: String,
+
+    config: Config,
     jwks: JwkSet,
 }
 
 impl Provider {
-    pub async fn new(audience: &str, client_id: &str, config_url: &str) -> Result<Self> {
-        let config = Config::new(config_url).await?;
-
-        let jwks = reqwest::Client::new()
-            .get(&config.jwks_uri)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<JwkSet>()
-            .await?;
-
-        Ok(Self {
-            audience: audience.to_string(),
-            config,
-            client_id: client_id.to_string(),
-            jwks,
-        })
-    }
-
     pub async fn code(&self) -> Result<DeviceCode> {
         let code = reqwest::Client::new()
             .post(self.config.device_authorization_endpoint.clone())
@@ -127,7 +134,7 @@ impl Provider {
         Ok(content)
     }
 
-    pub fn identity(&self, token: &Token) -> Result<Identity> {
+    pub fn identity(&self, token: &Token) -> Result<String> {
         let header = jsonwebtoken::decode_header(&token.id_token)?;
 
         let Some(kid) = header.kid else {
@@ -163,6 +170,11 @@ impl Provider {
 
         let token_data = jsonwebtoken::decode::<Identity>(&token.id_token, &key, &validation)?;
 
-        Ok(token_data.claims)
+        let Some(id) = token_data.claims.get(self.claim.clone()) else {
+            return Err(eyre::eyre!("Claim {} not found in token", self.claim))
+                .with_section(move || format!("{:#?}", token_data.claims).header("Token Claims"));
+        };
+
+        Ok(id.to_string())
     }
 }

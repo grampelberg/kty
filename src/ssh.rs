@@ -1,26 +1,33 @@
-use std::{borrow::Cow, net::SocketAddr, sync::Arc};
+use std::{
+    borrow::{Borrow, Cow},
+    net::SocketAddr,
+    sync::Arc,
+};
 
-use eyre::{eyre, Error, Result};
+use eyre::{eyre, Error, Report, Result};
 use fast_qr::QRBuilder;
+use kube::api::Api;
 use russh::{
     keys::key::PublicKey,
     server::{self, Auth, Config, Handler, Response, Server},
     Channel, Disconnect, MethodSet,
 };
-use tracing::info;
+use tracing::{error, info};
 
-use crate::openid;
+use crate::{identity, openid};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UIServer {
     id: usize,
+    kube: Arc<kube::Client>,
     identity_provider: Arc<openid::Provider>,
 }
 
 impl UIServer {
-    pub fn new(provider: openid::Provider) -> Self {
+    pub fn new(kube: kube::Client, provider: openid::Provider) -> Self {
         Self {
             id: 0,
+            kube: Arc::new(kube),
             identity_provider: Arc::new(provider),
         }
     }
@@ -39,6 +46,7 @@ impl Server for UIServer {
         self.id += 1;
 
         Session {
+            kube: self.kube.clone(),
             identity_provider: self.identity_provider.clone(),
             state: State::Unauthenticated,
         }
@@ -50,10 +58,14 @@ pub enum State {
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
-    Authenticated(openid::Identity),
+    Authenticated(identity::User),
 }
 
 impl State {
+    fn reset(&mut self) {
+        *self = State::Unauthenticated;
+    }
+
     fn key_offered(&mut self, key: &PublicKey) {
         *self = State::KeyOffered(key.clone());
     }
@@ -67,12 +79,30 @@ impl State {
         *self = State::CodeSent(code.clone(), key);
     }
 
-    fn authenticated(&mut self, identity: openid::Identity) {
-        *self = State::Authenticated(identity);
+    fn code_used(&mut self) {
+        let State::CodeSent(_, key) = self else {
+            *self = State::Unauthenticated;
+
+            return;
+        };
+
+        match key {
+            Some(key) => {
+                *self = State::KeyOffered(key.clone());
+            }
+            None => {
+                *self = State::Unauthenticated;
+            }
+        }
+    }
+
+    fn authenticated(&mut self, user: identity::User) {
+        *self = State::Authenticated(user);
     }
 }
 
 pub struct Session {
+    kube: Arc<kube::Client>,
     identity_provider: Arc<openid::Provider>,
     state: State,
 }
@@ -99,33 +129,88 @@ impl Session {
         })
     }
 
+    fn token_response(&self, error: Report) -> Result<Auth> {
+        let http_error = match error.downcast::<reqwest::Error>() {
+            Err(err) => return Err(err),
+            Ok(err) => err,
+        };
+
+        let Some(code) = http_error.status() else {
+            return Err(http_error.into());
+        };
+
+        if code == reqwest::StatusCode::FORBIDDEN {
+            info!("code not yet validated");
+
+            return Ok(Auth::Partial {
+                name: Cow::Borrowed(""),
+                instructions: Cow::Owned("Waiting for activation, please try again.".to_string()),
+                prompts: Cow::Owned(vec![(
+                    Cow::Owned("Press Enter to continue".to_string()),
+                    false,
+                )]),
+            });
+        }
+
+        Err(http_error.into())
+    }
+
+    fn user_response(&self, error: Report) -> Result<Auth> {
+        let kube_error = match error.downcast::<kube::Error>() {
+            Err(err) => return Err(err),
+            Ok(err) => err,
+        };
+
+        let kube::Error::Api(resp) = kube_error else {
+            return Err(kube_error.into());
+        };
+
+        if resp.code == reqwest::StatusCode::NOT_FOUND {
+            info!("user not found");
+
+            return Ok(Auth::Reject {
+                proceed_with_methods: None,
+            });
+        }
+
+        Err(resp.into())
+    }
+
     async fn authenticate(&mut self) -> Result<Auth> {
         let State::CodeSent(ref code, _) = self.state else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        match self.identity_provider.token(code).await {
-            Ok(token) => {
-                self.state
-                    .authenticated(self.identity_provider.identity(&token)?);
+        let token = match self.identity_provider.token(code).await {
+            Ok(token) => token,
+            Err(e) => return self.token_response(e),
+        };
 
-                Ok(Auth::Accept)
-            }
+        // The device code is single use, once a token is fetched it no longer works.
+        // The server will not disconnect on a failed auth - instead it'll let the user
+        // try again (3 times by default).
+        self.state.code_used();
+
+        let user = match self.get_user(&token).await {
+            Ok(user) => user,
             Err(e) => {
-                info!("Error validating code: {:?}", e);
-
-                Ok(Auth::Partial {
-                    name: Cow::Borrowed(""),
-                    instructions: Cow::Owned(
-                        "Waiting for activation, please try again.".to_string(),
-                    ),
-                    prompts: Cow::Owned(vec![(
-                        Cow::Owned("Press Enter to continue".to_string()),
-                        false,
-                    )]),
-                })
+                return self.user_response(e);
             }
-        }
+        };
+
+        self.state.authenticated(user);
+
+        Ok(Auth::Accept)
+    }
+
+    async fn get_user(&self, token: &openid::Token) -> Result<identity::User> {
+        let client: &kube::Client = self.kube.borrow();
+
+        let user: identity::User = Api::default_namespaced(client.clone())
+            .get(&self.identity_provider.identity(token)?)
+            .await?;
+
+        Ok(user)
     }
 }
 
