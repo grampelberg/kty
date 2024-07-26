@@ -4,6 +4,7 @@ use kube::CustomResource;
 use russh::keys::key::PublicKey;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::resources::KubeID;
 
