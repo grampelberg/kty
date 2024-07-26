@@ -21,6 +21,7 @@ use ssh_encoding::Encode;
 use tracing::{error, info};
 
 use crate::{
+    cli::users,
     identity, openid,
     resources::{GetOwners, KubeID, Owner},
 };
@@ -381,14 +382,16 @@ impl Authenticate for PublicKey {
             return Ok(None);
         };
 
-        identity::User::kind(&());
-
-        let users: Vec<identity::User> = keys.get_owners(&key).await?;
-
         if key.expired() {
             return Ok(None);
         }
 
-        Err(eyre!("unimplemented"))
+        let users: Vec<identity::User> = keys.get_owners(&key).await?;
+
+        match users.len() {
+            0 => Ok(None),
+            1 => Ok(Some(users[0].clone())),
+            x => Err(eyre!("{} users found for key", x)),
+        }
     }
 }
