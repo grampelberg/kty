@@ -1,11 +1,11 @@
-use std::time::Duration;
-
+use chrono::Duration;
 use color_eyre::{Section, SectionExt};
 use derive_builder::Builder;
 use eyre::Result;
 use itertools::Itertools;
 use jsonwebtoken::{jwk, jwk::JwkSet};
 use serde::{de::Deserializer, Deserialize};
+use tracing::debug;
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct DeviceCode {
@@ -27,13 +27,19 @@ pub struct Token {
     token_type: String,
 }
 
+impl Token {
+    pub fn expiration(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now() + self.expires_in
+    }
+}
+
 fn into_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let seconds = u64::deserialize(deserializer)?;
+    let seconds = i64::deserialize(deserializer)?;
 
-    Ok(Duration::from_secs(seconds))
+    Ok(Duration::seconds(seconds))
 }
 
 pub type Identity = serde_json::Value;
@@ -170,11 +176,16 @@ impl Provider {
 
         let token_data = jsonwebtoken::decode::<Identity>(&token.id_token, &key, &validation)?;
 
+        debug!(
+            token = format!("{:?}", token_data.claims),
+            "token validated"
+        );
+
         let Some(id) = token_data.claims.get(self.claim.clone()) else {
             return Err(eyre::eyre!("Claim {} not found in token", self.claim))
                 .with_section(move || format!("{:#?}", token_data.claims).header("Token Claims"));
         };
 
-        Ok(id.to_string())
+        Ok(id.as_str().unwrap().to_string())
     }
 }

@@ -36,7 +36,6 @@ impl Command for Root {
             .with_default_directive(self.verbosity.log_level_filter().as_trace().into())
             .from_env_lossy();
 
-        // TODO: figure out how to make with_span_events(FmtSpan::CLOSE) be configurable
         let fmt = tracing_subscriber::fmt::layer()
             .pretty()
             .with_writer(std::io::stderr)

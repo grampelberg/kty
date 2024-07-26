@@ -40,6 +40,7 @@ jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
 kube = { version = "0.93.1", features = ["derive"] }
 open = "5.3.0"
+regex = "1.10.5"
 reqwest = { version = "0.12.5", features = ["json", "stream", "multipart"] }
 russh = "0.44.0"
 russh-keys = "0.44.0"
@@ -48,6 +49,8 @@ serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 serde_path_to_error = "0.1.16"
 serde_yaml = "0.9.34"
+ssh-encoding = "0.2.0"
+ssh-key = "0.6.6"
 tokio = { version = "1.38.1", features = ["full"] }
 tracing = "0.1.40"
 tracing-error = "0.2.0"
