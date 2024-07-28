@@ -6,7 +6,7 @@ use tracing_error::ErrorLayer;
 use tracing_log::AsTrace;
 use tracing_subscriber::{filter::EnvFilter, prelude::*};
 
-use crate::cli::{certificate, resources, serve, users};
+use super::{resources, serve, users};
 
 #[derive(Parser, Container)]
 pub struct Root {
@@ -24,7 +24,6 @@ pub struct Root {
 
 #[derive(Subcommand, Container)]
 enum RootCmd {
-    Certificate(certificate::Certificate),
     Resources(resources::Resources),
     Serve(serve::Serve),
     Users(users::Users),

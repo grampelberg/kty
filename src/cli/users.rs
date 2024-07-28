@@ -7,7 +7,7 @@ use kube::{
 };
 
 use crate::{
-    identity::{User, UserSpec},
+    identity::user::{User, UserSpec},
     resources::KubeID,
 };
 
