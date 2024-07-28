@@ -1,22 +1,25 @@
-use color_eyre::{owo_colors::colors::Yellow, Section};
+use color_eyre::Section;
 use eyre::{eyre, OptionExt, Result};
-use futures::{future, StreamExt, TryStream, TryStreamExt};
+use futures::{future, StreamExt, TryStreamExt};
 use itertools::Itertools;
+use json_value_merge::Merge;
 use k8s_openapi::{
     apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
     apimachinery::pkg::apis::meta::v1::OwnerReference,
 };
 use kube::{
-    api::{Api, PatchParams, PostParams, ResourceExt},
+    api::{Api, ObjectMeta, PartialObjectMetaExt, PatchParams, PostParams, ResourceExt},
     core::NamespaceResourceScope,
     CustomResourceExt, Resource,
 };
 use regex::Regex;
-use reqwest::dns::Name;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use tracing::info;
 
 use crate::identity;
+
+pub static MANAGER: &str = "kuberift.com";
 
 pub(crate) fn all() -> Vec<CustomResourceDefinition> {
     vec![identity::User::crd(), identity::Key::crd()]
@@ -60,6 +63,8 @@ pub(crate) async fn create(
     Ok(success)
 }
 
+// TODO: ObjectMeta::default().into_request_partial::<ResourceType>(); is
+// probably a better way to do this.
 #[derive(Debug, PartialEq)]
 pub struct GVK {
     pub api_version: String,
@@ -101,13 +106,17 @@ impl KubeID for String {
     }
 }
 
-pub(crate) trait Owner: Resource {
+pub(crate) trait AddReferences: Resource {
     fn add_owner<K>(&mut self, owner: &K) -> Result<()>
+    where
+        K: Resource<DynamicType = ()>;
+
+    fn add_controller<K>(&mut self, obj: &K) -> Result<()>
     where
         K: Resource<DynamicType = ()>;
 }
 
-impl<K: Resource> Owner for K {
+impl<K: Resource> AddReferences for K {
     fn add_owner<O>(&mut self, owner: &O) -> Result<()>
     where
         O: Resource<DynamicType = ()>,
@@ -120,6 +129,22 @@ impl<K: Resource> Owner for K {
             .owner_references
             .get_or_insert_with(Vec::new)
             .push(owner_ref);
+
+        Ok(())
+    }
+
+    fn add_controller<O>(&mut self, owner: &O) -> Result<()>
+    where
+        O: Resource<DynamicType = ()>,
+    {
+        let ctrl_ref = owner
+            .controller_owner_ref(&())
+            .ok_or_eyre("controller reference not found")?;
+
+        self.meta_mut()
+            .owner_references
+            .get_or_insert_with(Vec::new)
+            .push(ctrl_ref);
 
         Ok(())
     }
@@ -167,5 +192,24 @@ where
             .boxed()
             .try_collect()
             .await
+    }
+}
+
+pub(crate) trait ApplyPatch<K>
+where
+    K: Resource,
+{
+    fn patch(patch: &serde_json::Value) -> Result<serde_json::Value>;
+}
+
+impl<K> ApplyPatch<K> for K
+where
+    K: Resource<DynamicType = ()>,
+{
+    fn patch(right: &serde_json::Value) -> Result<serde_json::Value> {
+        let mut left = serde_json::to_value(ObjectMeta::default().into_request_partial::<K>())?;
+        left.merge(right);
+
+        Ok(left)
     }
 }

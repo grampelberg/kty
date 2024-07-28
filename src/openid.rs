@@ -7,6 +7,8 @@ use jsonwebtoken::{jwk, jwk::JwkSet};
 use serde::{de::Deserializer, Deserialize};
 use tracing::debug;
 
+use crate::identity::{Identity, IdentityBuilder};
+
 #[derive(Clone, Deserialize, Debug)]
 pub struct DeviceCode {
     device_code: String,
@@ -18,19 +20,10 @@ pub struct DeviceCode {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Token {
-    access_token: String,
+struct OauthToken {
     id_token: String,
-    scope: String,
     #[serde(deserialize_with = "into_duration")]
     expires_in: Duration,
-    token_type: String,
-}
-
-impl Token {
-    pub fn expiration(&self) -> chrono::DateTime<chrono::Utc> {
-        chrono::Utc::now() + self.expires_in
-    }
 }
 
 fn into_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -41,8 +34,6 @@ where
 
     Ok(Duration::seconds(seconds))
 }
-
-pub type Identity = serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -116,15 +107,15 @@ impl Provider {
         Ok(code)
     }
 
-    pub async fn token(&self, code: &DeviceCode) -> Result<Token> {
+    async fn oauth_token(&self, code: &DeviceCode) -> Result<OauthToken> {
         let data = reqwest::Client::new()
-            .post(self.config.token_endpoint.clone())
+            .post(&self.config.token_endpoint)
             .form(&[
-                ("client_id", self.client_id.clone()),
-                ("device_code", code.device_code.clone()),
+                ("client_id", &self.client_id),
+                ("device_code", &code.device_code),
                 (
                     "grant_type",
-                    "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+                    &"urn:ietf:params:oauth:grant-type:device_code".to_string(),
                 ),
             ])
             .send()
@@ -133,14 +124,14 @@ impl Provider {
             .text()
             .await?;
 
-        let content: Token =
+        let content: OauthToken =
             serde_path_to_error::deserialize(&mut serde_json::Deserializer::from_str(&data))
                 .with_section(move || data.header("Response:"))?;
 
         Ok(content)
     }
 
-    pub fn identity(&self, token: &Token) -> Result<String> {
+    fn id_token(&self, token: &OauthToken) -> Result<serde_json::Value> {
         let header = jsonwebtoken::decode_header(&token.id_token)?;
 
         let Some(kid) = header.kid else {
@@ -174,18 +165,20 @@ impl Provider {
             validation
         };
 
-        let token_data = jsonwebtoken::decode::<Identity>(&token.id_token, &key, &validation)?;
+        let token_data =
+            jsonwebtoken::decode::<serde_json::Value>(&token.id_token, &key, &validation)?;
 
-        debug!(
-            token = format!("{:?}", token_data.claims),
-            "token validated"
-        );
+        Ok(token_data.claims)
+    }
 
-        let Some(id) = token_data.claims.get(self.claim.clone()) else {
-            return Err(eyre::eyre!("Claim {} not found in token", self.claim))
-                .with_section(move || format!("{:#?}", token_data.claims).header("Token Claims"));
-        };
+    pub async fn identity(&self, code: &DeviceCode) -> Result<Identity> {
+        let oauth_token = self.oauth_token(code).await?;
+        let id_token = self.id_token(&oauth_token)?;
 
-        Ok(id.as_str().unwrap().to_string())
+        Ok(IdentityBuilder::default()
+            .key(self.claim.clone())
+            .claims(id_token)
+            .expiration(chrono::Utc::now() + oauth_token.expires_in)
+            .build()?)
     }
 }

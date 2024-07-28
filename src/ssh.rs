@@ -4,57 +4,63 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::Utc;
+use derive_builder::Builder;
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
+use itertools::Itertools;
+use k8s_openapi::api::core::v1::ObjectReference;
 use kube::{
-    api::{Api, ListParams, Patch, PatchParams},
-    Resource, ResourceExt,
+    api::{Api, Patch, PatchParams},
+    runtime::events::{Event, Recorder, Reporter},
+    ResourceExt,
 };
-use regex::Regex;
 use russh::{
     keys::key::PublicKey,
     server::{self, Auth, Config, Handler, Response, Server},
     Channel, Disconnect, MethodSet,
 };
-use ssh_encoding::Encode;
+use serde_json::json;
 use tracing::{error, info};
+use tracing_error::{InstrumentResult, TracedError};
 
 use crate::{
-    cli::users,
     identity, openid,
-    resources::{GetOwners, KubeID, Owner},
+    resources::{ApplyPatch, GetOwners, KubeID, MANAGER},
 };
 
-#[derive(Debug)]
-pub enum Error {
-    Auth(String),
-    Config(String),
+#[derive(Builder)]
+pub struct Controller {
+    client: kube::Client,
+    reporter: Reporter,
 }
 
-impl std::error::Error for Error {}
+impl Controller {
+    pub fn client(&self) -> &kube::Client {
+        &self.client
+    }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Error::Auth(id) => write!(f, "User not found: {id}"),
-            Error::Config(err) => write!(f, "Config error: {err}"),
-        }
+    pub async fn publish(&self, obj_ref: ObjectReference, ev: Event) -> Result<()> {
+        Recorder::new(self.client.clone(), self.reporter.clone(), obj_ref)
+            .publish(ev)
+            .await?;
+
+        Ok(())
     }
 }
 
 #[derive(Clone)]
 pub struct UIServer {
     id: usize,
-    kube: Arc<kube::Client>,
+    controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
 }
 
 impl UIServer {
-    pub fn new(kube: kube::Client, provider: openid::Provider) -> Self {
+    pub fn new(controller: Controller, provider: openid::Provider) -> Self {
         Self {
             id: 0,
-            kube: Arc::new(kube),
+            controller: Arc::new(controller),
             identity_provider: Arc::new(provider),
         }
     }
@@ -73,26 +79,26 @@ impl Server for UIServer {
         self.id += 1;
 
         Session {
-            kube: self.kube.clone(),
+            controller: self.controller.clone(),
             identity_provider: self.identity_provider.clone(),
             state: State::Unauthenticated,
         }
     }
+
+    fn handle_session_error(&mut self, error: <Self::Handler as Handler>::Error) {
+        error!("unhandled session error: {error:?}");
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum State {
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
-    Authenticated(identity::User),
+    Authenticated(identity::User, String),
 }
 
 impl State {
-    fn reset(&mut self) {
-        *self = State::Unauthenticated;
-    }
-
     fn key_offered(&mut self, key: &PublicKey) {
         *self = State::KeyOffered(key.clone());
     }
@@ -123,8 +129,8 @@ impl State {
         }
     }
 
-    fn authenticated(&mut self, user: identity::User) {
-        *self = State::Authenticated(user);
+    fn authenticated(&mut self, user: identity::User, method: String) {
+        *self = State::Authenticated(user, method);
     }
 }
 
@@ -154,28 +160,8 @@ fn token_response(error: Report) -> Result<Auth> {
     Err(http_error.into())
 }
 
-fn user_response(error: Report) -> Result<Auth> {
-    let error = match error.downcast::<Error>() {
-        Err(err) => return Err(err),
-        Ok(err) => err,
-    };
-
-    let Error::Auth(id) = error else {
-        return Err(error.into());
-    };
-
-    // TODO: this isn't great, rejection likely shouldn't be an event either but
-    // it has negative implications. There needs to be some way to debug what's
-    // happening though. Maybe a debug log level is enough?
-    info!(id = id, "rejecting user");
-
-    Ok(Auth::Reject {
-        proceed_with_methods: None,
-    })
-}
-
 pub struct Session {
-    kube: Arc<kube::Client>,
+    controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
     state: State,
 }
@@ -205,101 +191,42 @@ impl Session {
     // TODO: this feels like it might actually be nifty to have as part of the code
     // itself via trait.
     // TODO: need to handle 429 responses and backoff.
+    #[tracing::instrument(skip(self))]
     async fn authenticate_code(&mut self) -> Result<Auth> {
-        let State::CodeSent(ref code, _) = self.state else {
+        let State::CodeSent(code, key) = self.state.clone() else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let token = match self.identity_provider.token(code).await {
-            Ok(token) => token,
+        let id = match self.identity_provider.identity(&code).await {
+            Ok(id) => id,
             Err(e) => return token_response(e),
         };
+
+        let ctrl = self.controller.borrow();
 
         // The device code is single use, once a token is fetched it no longer works.
         // The server will not disconnect on a failed auth - instead it'll let the user
         // try again (3 times by default).
         self.state.code_used();
 
-        let user = match self.get_user(&token).await {
-            Ok(user) => user,
-            Err(e) => {
-                return user_response(e);
-            }
+        let Some(user) = id.authenticate(ctrl).await? else {
+            // TODO: this isn't great, rejection likely shouldn't be an event either but
+            // it has negative implications. There needs to be some way to debug what's
+            // happening though. Maybe a debug log level is enough?
+            info!(id = %id, "rejecting user");
+
+            return Ok(Auth::Reject {
+                proceed_with_methods: None,
+            });
         };
 
-        // The key should have been checked as part of auth_publickey which
-        // should be configured to happen first on the client side. There's no real
-        // value to checking the ID returned *and* the key at this point. Additionally,
-        // this is an update operation because the keys expire at the same time as the
-        // tokens do.
-        if let State::KeyOffered(key) = &self.state {
-            self.update_key(&user, key, &token.expiration()).await?;
-        }
+        self.state.authenticated(user.clone(), "openid".into());
 
-        self.state.authenticated(user);
+        if let Some(user_key) = key {
+            user.set_key(ctrl, &user_key, &id.expiration).await?;
+        }
 
         Ok(Auth::Accept)
-    }
-
-    async fn get_user(&self, token: &openid::Token) -> Result<identity::User> {
-        let client: &kube::Client = self.kube.borrow();
-
-        // TODO: it would be nice to get the other claims so that they can be added to
-        // the identity. Should this construct a user identity and then filter via
-        // comparison?
-        let id = self.identity_provider.identity(token)?;
-
-        // TODO: this is particularly bad, move over to using a reflector and then CRD
-        // field selectors once it is beta/stable (alpha 1.30).
-        let users: Vec<identity::User> = Api::default_namespaced(client.clone())
-            .list(&ListParams::default())
-            .await?
-            .items
-            .into_iter()
-            .filter(|user: &identity::User| user.spec.id == id)
-            .collect();
-
-        match users.len() {
-            0 => Err(Report::new(Error::Auth(id))),
-            1 => Ok(users[0].clone()),
-            x => Err(Report::new(Error::Config(format!(
-                "{x} resources found with id: {id}"
-            )))),
-        }
-    }
-
-    async fn update_key(
-        &self,
-        user: &identity::User,
-        key: &PublicKey,
-        expiration: &DateTime<Utc>,
-    ) -> Result<()> {
-        let client: &kube::Client = self.kube.borrow();
-
-        // TODO: make sure to add controller reference
-        let mut kube_key = identity::Key::new(
-            &key.kube_id()?,
-            identity::KeySpec {
-                key: key.clone(),
-                expiration: *expiration,
-            },
-        );
-
-        // TODO: what happens if multiple users want to use the same key? As it stands,
-        // there would need to be a way to select your user based off the key offered.
-        // Because the key is offered before giving the client a chance,
-        // keyboard_interactive will never happen if you have a valid user + key.
-        kube_key.add_owner(user)?;
-
-        Api::<identity::Key>::default_namespaced(client.clone())
-            .patch(
-                &kube_key.name_any(),
-                &PatchParams::apply("session.kuberift.com").force(),
-                &Patch::Apply(&kube_key),
-            )
-            .await?;
-
-        Ok(())
     }
 }
 
@@ -308,15 +235,14 @@ impl Session {
 impl Handler for Session {
     type Error = eyre::Error;
 
-    #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self))]
+    #[tracing::instrument(skip(self, key))]
     async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth> {
         info!("auth_publickey");
 
         self.state.key_offered(key);
 
-        if let Some(user) = key.authenticate(self.kube.borrow()).await? {
-            self.state.authenticated(user);
+        if let Some(user) = key.authenticate(self.controller.borrow()).await? {
+            self.state.authenticated(user, "publickey".into());
 
             return Ok(Auth::Accept);
         }
@@ -326,15 +252,16 @@ impl Handler for Session {
         })
     }
 
-    #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self))]
+    #[tracing::instrument(skip(self))]
     async fn auth_keyboard_interactive(
         &mut self,
         user: &str,
-        submethods: &str,
+        _: &str,
         _: Option<Response<'async_trait>>,
     ) -> Result<Auth> {
         info!("auth_keyboard_interactive");
+
+        // self.send_code().await.in_current_span()?;
 
         match self.state {
             State::Unauthenticated | State::KeyOffered(_) => self.send_code().await,
@@ -343,11 +270,15 @@ impl Handler for Session {
         }
     }
 
-    // - issue an event on login
-    // - update the user's status
     #[tracing::instrument(skip(self, session))]
     async fn auth_succeeded(&mut self, session: &mut server::Session) -> Result<()> {
         info!("auth_succeeded");
+
+        let State::Authenticated(ref user, ref method) = self.state else {
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        user.login(&self.controller, method).await?;
 
         Ok(())
     }
@@ -366,8 +297,8 @@ impl Handler for Session {
 }
 
 #[async_trait::async_trait]
-trait Authenticate {
-    async fn authenticate(&self, client: &kube::Client) -> Result<Option<identity::User>>;
+pub trait Authenticate {
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<identity::User>>;
 }
 
 #[async_trait::async_trait]
@@ -375,8 +306,9 @@ impl Authenticate for PublicKey {
     // - get the user from owner references
     // - validate the expiration
     // - should there be a status field or condition for an existing key?
-    async fn authenticate(&self, client: &kube::Client) -> Result<Option<identity::User>> {
-        let keys: Api<identity::Key> = Api::default_namespaced(client.clone());
+    #[tracing::instrument(skip(self, ctrl))]
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<identity::User>> {
+        let keys: Api<identity::Key> = Api::default_namespaced(ctrl.client().clone());
 
         let Some(key): Option<identity::Key> = keys.get_opt(&self.kube_id()?).await? else {
             return Ok(None);
@@ -386,12 +318,23 @@ impl Authenticate for PublicKey {
             return Ok(None);
         }
 
-        let users: Vec<identity::User> = keys.get_owners(&key).await?;
+        keys.patch_status(
+            &key.name_any(),
+            &PatchParams::apply(MANAGER).force(),
+            &Patch::Apply(&identity::Key::patch(&json!({
+                "status": {
+                    "last_used": Some(Utc::now()),
+                }
+            }))?),
+        )
+        .await?;
 
-        match users.len() {
-            0 => Ok(None),
-            1 => Ok(Some(users[0].clone())),
-            x => Err(eyre!("{} users found for key", x)),
-        }
+        let user = keys
+            .get_owners::<identity::User>(&key)
+            .await?
+            .into_iter()
+            .at_most_one()?;
+
+        Ok(user)
     }
 }

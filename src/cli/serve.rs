@@ -7,15 +7,25 @@ use clap::{
 use eyre::Result;
 use itertools::Itertools;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::{api::Api, Client};
+use kube::{
+    api::Api,
+    runtime::{events::Reporter, Controller},
+    Client,
+};
 use russh::{server::Config, MethodSet};
 use tracing::info;
 
-use crate::{openid, openid::Fetch, resources, ssh};
+use crate::{
+    openid::{self, Fetch},
+    resources,
+    ssh::{self, ControllerBuilder},
+};
 
 static AUDIENCE: &str = "https://kuberift.com";
 static CLIENT_ID: &str = "kYQRVgyf2fy8e4zw7xslOmPaLVz3jIef";
 static OID_CONFIG_URL: &str = "https://bigtop.auth0.com/.well-known/openid-configuration";
+
+static CONTROLLER_NAME: &str = "ssh.kuberift.com";
 
 #[derive(Parser, Container)]
 pub struct Serve {
@@ -33,7 +43,7 @@ pub struct Serve {
     client_id: String,
     #[clap(long, default_value = OID_CONFIG_URL)]
     openid_configuration: String,
-    /// Field of the id_token to use as the user's ID.
+    /// Claim of the id_token to use as the user's ID.
     #[clap(long, default_value = "email")]
     claim: String,
 
@@ -53,6 +63,11 @@ impl Command for Serve {
             resources::create(&Api::all(client.clone()), true).await?;
         }
 
+        let reporter = Reporter {
+            controller: CONTROLLER_NAME.into(),
+            instance: Some(hostname::get()?.to_string_lossy().into()),
+        };
+
         let server_cfg = Config {
             inactivity_timeout: Some(self.inactivity_timeout.into()),
             methods: MethodSet::PUBLICKEY | MethodSet::KEYBOARD_INTERACTIVE,
@@ -69,7 +84,10 @@ impl Command for Serve {
         let jwks = cfg.jwks().await?;
 
         ssh::UIServer::new(
-            client,
+            ControllerBuilder::default()
+                .client(client)
+                .reporter(reporter)
+                .build()?,
             openid::ProviderBuilder::default()
                 .audience(self.audience.clone())
                 .claim(self.claim.clone())
