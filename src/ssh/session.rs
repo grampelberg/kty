@@ -124,8 +124,6 @@ impl Session {
         })
     }
 
-    // TODO: this feels like it might actually be nifty to have as part of the code
-    // itself via trait.
     // TODO: need to handle 429 responses and backoff.
     #[tracing::instrument(skip(self))]
     async fn authenticate_code(&mut self) -> Result<Auth> {
@@ -196,8 +194,6 @@ impl Handler for Session {
         _: Option<Response<'async_trait>>,
     ) -> Result<Auth> {
         info!("auth_keyboard_interactive");
-
-        // self.send_code().await.in_current_span()?;
 
         match self.state {
             State::Unauthenticated | State::KeyOffered(_) => self.send_code().await,

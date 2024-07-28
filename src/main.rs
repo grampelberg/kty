@@ -9,7 +9,7 @@ use cata::execute;
 use clap::Parser;
 use eyre::Result;
 
-use crate::cli::root::Root;
+use crate::cli::Root;
 
 #[tokio::main]
 async fn main() -> Result<()> {
