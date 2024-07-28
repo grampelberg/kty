@@ -5,12 +5,13 @@ use eyre::Result;
 use itertools::Itertools;
 use jsonwebtoken::{jwk, jwk::JwkSet};
 use serde::{de::Deserializer, Deserialize};
-use tracing::debug;
 
 use crate::identity::{Identity, IdentityBuilder};
 
+#[allow(dead_code)]
 #[derive(Clone, Deserialize, Debug)]
 pub struct DeviceCode {
+    #[allow(clippy::struct_field_names)]
     device_code: String,
     pub user_code: String,
     pub verification_uri: String,

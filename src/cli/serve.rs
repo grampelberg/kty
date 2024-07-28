@@ -6,14 +6,8 @@ use clap::{
 };
 use eyre::Result;
 use itertools::Itertools;
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::{
-    api::Api,
-    runtime::{events::Reporter, Controller},
-    Client,
-};
+use kube::{api::Api, runtime::events::Reporter, Client};
 use russh::{server::Config, MethodSet};
-use tracing::info;
 
 use crate::{
     openid::{self, Fetch},

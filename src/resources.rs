@@ -14,7 +14,6 @@ use kube::{
 };
 use regex::Regex;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 use tracing::info;
 
 use crate::identity;
@@ -22,7 +21,7 @@ use crate::identity;
 pub static MANAGER: &str = "kuberift.com";
 
 pub(crate) fn all() -> Vec<CustomResourceDefinition> {
-    vec![identity::User::crd(), identity::Key::crd()]
+    vec![identity::user::User::crd(), identity::key::Key::crd()]
 }
 
 pub(crate) async fn create(
@@ -63,37 +62,6 @@ pub(crate) async fn create(
     Ok(success)
 }
 
-// TODO: ObjectMeta::default().into_request_partial::<ResourceType>(); is
-// probably a better way to do this.
-#[derive(Debug, PartialEq)]
-pub struct GVK {
-    pub api_version: String,
-    pub kind: String,
-}
-
-pub trait GetGVK {
-    fn gvk() -> GVK;
-}
-
-impl<K> GetGVK for K
-where
-    K: Resource,
-    <K as Resource>::DynamicType: Default,
-{
-    fn gvk() -> GVK {
-        GVK {
-            api_version: K::api_version(&K::DynamicType::default()).into(),
-            kind: K::kind(&K::DynamicType::default()).into(),
-        }
-    }
-}
-
-impl PartialEq<OwnerReference> for GVK {
-    fn eq(&self, other: &OwnerReference) -> bool {
-        self.api_version == other.api_version && self.kind == other.kind
-    }
-}
-
 pub(crate) trait KubeID {
     fn kube_id(&self) -> Result<String>;
 }
@@ -107,32 +75,12 @@ impl KubeID for String {
 }
 
 pub(crate) trait AddReferences: Resource {
-    fn add_owner<K>(&mut self, owner: &K) -> Result<()>
-    where
-        K: Resource<DynamicType = ()>;
-
     fn add_controller<K>(&mut self, obj: &K) -> Result<()>
     where
         K: Resource<DynamicType = ()>;
 }
 
 impl<K: Resource> AddReferences for K {
-    fn add_owner<O>(&mut self, owner: &O) -> Result<()>
-    where
-        O: Resource<DynamicType = ()>,
-    {
-        let owner_ref = owner
-            .owner_ref(&())
-            .ok_or_eyre("owner reference not found")?;
-
-        self.meta_mut()
-            .owner_references
-            .get_or_insert_with(Vec::new)
-            .push(owner_ref);
-
-        Ok(())
-    }
-
     fn add_controller<O>(&mut self, owner: &O) -> Result<()>
     where
         O: Resource<DynamicType = ()>,
@@ -147,6 +95,21 @@ impl<K: Resource> AddReferences for K {
             .push(ctrl_ref);
 
         Ok(())
+    }
+}
+
+trait IsKind {
+    fn is_kind(reference: &OwnerReference) -> bool;
+}
+
+impl<K> IsKind for K
+where
+    K: Resource,
+    <K as Resource>::DynamicType: Default,
+{
+    fn is_kind(reference: &OwnerReference) -> bool {
+        reference.api_version == K::api_version(&K::DynamicType::default())
+            && reference.kind == K::kind(&K::DynamicType::default())
     }
 }
 
@@ -183,10 +146,8 @@ where
     {
         let client: &Api<Owner> = &Api::default_namespaced(self.into());
 
-        let owner_gvk = &Owner::gvk();
-
         futures::stream::iter(obj.owner_references())
-            .filter(|reference| future::ready(&owner_gvk == reference))
+            .filter(|reference| future::ready(Owner::is_kind(reference)))
             .then(move |reference| async { client.get(&reference.name) })
             .buffered(100)
             .boxed()
