@@ -1,29 +1,41 @@
 use std::{
     borrow::{Borrow, Cow},
+    f32::consts::E,
+    str,
     sync::Arc,
 };
 
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
+use ratatui::{
+    backend::CrosstermBackend,
+    widgets::{Block, Borders, Clear, Paragraph},
+    Terminal,
+};
 use russh::{
     keys::key::PublicKey,
-    server::{self, Auth, Handler, Response},
-    Channel, Disconnect, MethodSet,
+    server::{self, Auth, Handle, Handler, Msg, Response},
+    Channel, ChannelId, Disconnect, MethodSet,
 };
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
+use tokio_util::{io::SyncIoBridge, time::delay_queue::Key};
 use tracing::info;
 
 use crate::{
+    dashboard::Dashboard,
     identity::user::User,
     openid,
     ssh::{Authenticate, Controller},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum State {
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     Authenticated(User, String),
+    ChannelCreated,
+    PtyStarted,
 }
 
 impl State {
@@ -60,6 +72,14 @@ impl State {
     fn authenticated(&mut self, user: User, method: String) {
         *self = State::Authenticated(user, method);
     }
+
+    fn channel_created(&mut self) {
+        *self = State::ChannelCreated;
+    }
+
+    fn pty_started(&mut self) {
+        *self = State::PtyStarted;
+    }
 }
 
 fn token_response(error: Report) -> Result<Auth> {
@@ -92,6 +112,7 @@ pub struct Session {
     controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
     state: State,
+    dashboard: Option<Dashboard>,
 }
 
 impl Session {
@@ -100,9 +121,11 @@ impl Session {
             controller,
             identity_provider,
             state: State::Unauthenticated,
+            dashboard: None,
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn send_code(&mut self) -> Result<Auth> {
         let code = self.identity_provider.code().await?;
 
@@ -127,8 +150,12 @@ impl Session {
     // TODO: need to handle 429 responses and backoff.
     #[tracing::instrument(skip(self))]
     async fn authenticate_code(&mut self) -> Result<Auth> {
-        let State::CodeSent(code, key) = self.state.clone() else {
-            return Err(eyre!("Unexpected state: {:?}", self.state));
+        let (code, key) = {
+            let State::CodeSent(code, key) = &self.state else {
+                return Err(eyre!("Unexpected state: {:?}", self.state));
+            };
+
+            (code.clone(), key.clone())
         };
 
         let id = match self.identity_provider.identity(&code).await {
@@ -215,15 +242,112 @@ impl Handler for Session {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, channel, session))]
     async fn channel_open_session(
         &mut self,
-        _channel: Channel<server::Msg>,
+        channel: Channel<server::Msg>,
         session: &mut server::Session,
     ) -> Result<bool> {
-        info!("channel_open_session");
+        info!("channel_open_session: {}", channel.id());
 
-        session.disconnect(Disconnect::ServiceNotAvailable, "unimplemented", "");
+        let State::Authenticated(user, _) = &self.state else {
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        let mut channel = channel;
+
+        self.dashboard = Some(Dashboard::new(user.clone(), &channel.into_stream()));
+
+        self.state.channel_created();
+
+        tokio::spawn(async move {
+            loop {
+                let data = channel.make_reader().read(&mut [0u8; 1024]).await.unwrap();
+
+                info!("data: {:?}", data);
+            }
+        });
 
         Ok(true)
+    }
+
+    #[tracing::instrument(skip(self, channel, data, session))]
+    async fn data(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut server::Session,
+    ) -> Result<()> {
+        info!("data: {:?}", data);
+
+        if data[0] == b'q' {
+            return Err(eyre!("User requested disconnect"));
+        }
+
+        Ok(())
+    }
+
+    async fn extended_data(
+        &mut self,
+        channel: ChannelId,
+        data_type: u32,
+        data: &[u8],
+        session: &mut server::Session,
+    ) -> Result<()> {
+        info!("extended_data");
+
+        Ok(())
+    }
+
+    async fn window_change_request(
+        &mut self,
+        _: ChannelId,
+        col_width: u32,
+        row_height: u32,
+        _: u32,
+        _: u32,
+        _: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        info!("window_change_request");
+
+        Ok(())
+    }
+
+    fn adjust_window(&mut self, _: ChannelId, current: u32) -> u32 {
+        info!("adjust_window");
+
+        current
+    }
+
+    async fn channel_close(&mut self, _: ChannelId, _: &mut server::Session) -> Result<()> {
+        info!("channel_close");
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, session))]
+    async fn pty_request(
+        &mut self,
+        id: ChannelId,
+        term: &str,
+        width: u32,
+        height: u32,
+        _: u32,
+        _: u32,
+        modes: &[(russh::Pty, u32)],
+        session: &mut server::Session,
+    ) -> Result<()> {
+        info!("pty_request: {}", id);
+
+        let State::ChannelCreated = self.state else {
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        // self.dashboard
+        //     .take()
+        //     .unwrap()
+        //     .start(width.try_into()?, height.try_into()?)?;
+
+        Ok(())
     }
 }

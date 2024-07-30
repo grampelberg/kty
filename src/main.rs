@@ -1,5 +1,7 @@
 //! # kuberift
 mod cli;
+mod dashboard;
+mod events;
 mod identity;
 mod openid;
 mod resources;
