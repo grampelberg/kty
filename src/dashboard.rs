@@ -29,7 +29,6 @@ use crate::identity::user::User;
 // }
 pub struct Dashboard {
     user: User,
-    stream: ChannelStream<server::Msg>,
 
     task: Option<JoinHandle<()>>,
 }
@@ -39,26 +38,23 @@ pub struct Dashboard {
 //     R: AsyncRead,
 //     W: std::io::Write + Clone + Send + 'static,
 impl Dashboard {
-    pub fn new(user: User, stream: &ChannelStream<server::Msg>) -> Self {
-        Self {
-            user,
-            stream,
-            task: None,
-        }
+    pub fn new(user: User) -> Self {
+        Self { user, task: None }
     }
 
-    pub fn start(&mut self, width: u16, height: u16) -> Result<()> {
+    pub fn start(&mut self, stream: ChannelStream<server::Msg>) -> Result<()> {
         if self.task.is_some() {
             return Err(eyre!("Dashboard is already started"));
         }
 
-        let stream = &self.stream;
+        let mut stream = stream;
 
         self.task = Some(tokio::spawn(async move {
             loop {
-                stream.read(&mut [0; 1024]);
+                let mut foo = [0; 1024];
+                stream.read(&mut foo);
 
-                info!("Dashboard tick");
+                info!("Dashboard tick: {:?}", foo);
             }
         }));
 
