@@ -34,7 +34,7 @@ pub enum State {
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     Authenticated(User, String),
-    ChannelCreated,
+    ChannelCreated(Channel<server::Msg>),
     PtyStarted,
 }
 
@@ -73,8 +73,8 @@ impl State {
         *self = State::Authenticated(user, method);
     }
 
-    fn channel_created(&mut self) {
-        *self = State::ChannelCreated;
+    fn channel_created(&mut self, channel: Channel<server::Msg>) {
+        *self = State::ChannelCreated(channel);
     }
 
     fn pty_started(&mut self) {
@@ -254,19 +254,26 @@ impl Handler for Session {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let mut channel = channel;
+        // self.state.channel_created(channel);
 
-        self.dashboard = Some(Dashboard::new(user.clone(), &channel.into_stream()));
+        // let mut channel = channel;
 
-        self.state.channel_created();
+        let mut dashboard = Dashboard::new(user.clone());
 
-        tokio::spawn(async move {
-            loop {
-                let data = channel.make_reader().read(&mut [0u8; 1024]).await.unwrap();
+        dashboard.start(channel.into_stream())?;
 
-                info!("data: {:?}", data);
-            }
-        });
+        self.dashboard = Some(dashboard);
+
+        // self.state.channel_created();
+
+        // tokio::spawn(async move {
+        //     loop {
+        //         let data = channel.make_reader().read(&mut [0u8;
+        // 1024]).await.unwrap();
+
+        //         info!("data: {:?}", data);
+        //     }
+        // });
 
         Ok(true)
     }
@@ -339,9 +346,21 @@ impl Handler for Session {
     ) -> Result<()> {
         info!("pty_request: {}", id);
 
-        let State::ChannelCreated = self.state else {
-            return Err(eyre!("Unexpected state: {:?}", self.state));
-        };
+        // {
+        //     let State::ChannelCreated(channel) = &self.state else {
+        //         return Err(eyre!("Unexpected state: {:?}", self.state));
+        //     };
+
+        //     let foo = channel.take();
+
+        //     self.dashboard.as_mut().unwrap().start(
+        //         channel.clone().into_stream(),
+        //         width.try_into()?,
+        //         height.try_into()?,
+        //     )?;
+        // }
+
+        self.state.pty_started();
 
         // self.dashboard
         //     .take()
