@@ -8,6 +8,7 @@ use k8s_openapi::api::core::v1::ObjectReference;
 use kube::runtime::events::{Event, Recorder, Reporter};
 use russh::server::{Config, Handler, Server};
 use session::Session;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::error;
 
 use crate::{identity::user::User, openid};
@@ -58,7 +59,7 @@ impl UIServer {
 impl Server for UIServer {
     type Handler = Session;
 
-    fn new_client(&mut self, _: Option<SocketAddr>) -> Session {
+    fn new_client(&mut self, _: Option<SocketAddr>) -> Self::Handler {
         self.id += 1;
 
         Session::new(self.controller.clone(), self.identity_provider.clone())
