@@ -3,6 +3,7 @@ mod cli;
 mod dashboard;
 mod events;
 mod identity;
+mod io;
 mod openid;
 mod resources;
 mod ssh;

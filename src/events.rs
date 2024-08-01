@@ -1,10 +1,27 @@
 use std::str;
 
 use eyre::{eyre, Result};
-use tracing::info;
+use ratatui::backend::WindowSize;
 
 #[derive(Debug)]
-enum Keypress {
+pub enum Event {
+    Keypress(Keypress),
+    Resize(WindowSize),
+    Shutdown,
+    Render,
+}
+
+impl TryInto<Event> for &[u8] {
+    type Error = eyre::Report;
+
+    fn try_into(self) -> Result<Event> {
+        Ok(Event::Keypress(self.try_into()?))
+    }
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug)]
+pub enum Keypress {
     Null,
     StartOfHeader,
     StartOfText,
@@ -113,20 +130,5 @@ impl TryInto<Keypress> for &[u8] {
                 str::from_utf8(self).unwrap().to_string(),
             )),
         }
-    }
-}
-
-#[derive(Default)]
-struct EventStream {}
-
-impl EventStream {
-    fn parse(data: &[u8]) -> Result<Option<Keypress>> {
-        info!("data: {:?}", data.escape_ascii().to_string());
-
-        if data.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(data.try_into()?))
     }
 }

@@ -1,111 +1,85 @@
+use std::sync::Arc;
+
 use eyre::{eyre, Result};
 use ratatui::{
-    backend::CrosstermBackend,
+    backend::{self, CrosstermBackend},
     layout::Rect,
+    terminal::TerminalOptions,
     widgets::{Block, Borders, Clear, Paragraph},
-    Terminal,
+    Terminal, Viewport,
 };
-use russh::{server, ChannelStream};
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite},
-    task::{self, JoinHandle},
+use tokio::sync::mpsc;
+use tracing::{debug, info, trace};
+
+use crate::{
+    events::{Event, Keypress},
+    identity::user::User,
+    io::{backend::Backend, Handler, Writer},
+    ssh::Controller,
 };
-use tokio_util::{io::SyncIoBridge, sync::CancellationToken};
-use tracing::info;
 
-use crate::identity::user::User;
-
-// #[derive(Debug)]
-// pub struct Dashboard<R, W>
-// where
-//     R: AsyncRead,
-//     W: std::io::Write + Clone + Send + 'static,
-// {
-//     reader: R,
-//     writer: W,
-
-//     cancel: CancellationToken,
-//     task: Option<JoinHandle<()>>,
-// }
 pub struct Dashboard {
+    controller: Arc<Controller>,
     user: User,
-
-    task: Option<JoinHandle<()>>,
 }
 
-// impl<R, W> Dashboard<R, W>
-// where
-//     R: AsyncRead,
-//     W: std::io::Write + Clone + Send + 'static,
+fn reset_terminal(term: &mut Terminal<Backend>) -> Result<()> {
+    term.show_cursor()?;
+
+    Ok(())
+}
+
 impl Dashboard {
-    pub fn new(user: User) -> Self {
-        Self { user, task: None }
+    pub fn new(controller: Arc<Controller>, user: User) -> Self {
+        Self { controller, user }
     }
+}
 
-    pub fn start(&mut self, stream: ChannelStream<server::Msg>) -> Result<()> {
-        if self.task.is_some() {
-            return Err(eyre!("Dashboard is already started"));
-        }
+impl Dashboard {
+    fn render(&self, term: &mut Terminal<Backend>) -> Result<()> {
+        term.draw(|f| {
+            let size = f.size();
 
-        let mut stream = stream;
+            let block = Block::default()
+                .title("Dashboard")
+                .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded);
 
-        self.task = Some(tokio::spawn(async move {
-            loop {
-                let mut foo = [0; 1024];
-                stream.read(&mut foo);
-
-                info!("Dashboard tick: {:?}", foo);
-            }
-        }));
-
-        // let mut term = Terminal::new(CrosstermBackend::new(writer))?;
-        // let writer = SyncIoBridge::new(channel.make_writer());
-
-        // self.task = Some(tokio::task::spawn_blocking(move || {
-        //     let writer = SyncIoBridge::new(&mut self.stream);
-        //     let mut term = Terminal::new(CrosstermBackend::new(writer)).unwrap();
-
-        //     term.resize(Rect {
-        //         x: 0,
-        //         y: 0,
-        //         width,
-        //         height,
-        //     })
-        //     .unwrap();
-
-        //     loop {
-        //         std::thread::sleep(std::time::Duration::from_secs(1));
-
-        //         info!("Dashboard tick");
-
-        //         // term.draw(|f| {
-        //         //     let size = f.size();
-        //         //     f.render_widget(Clear, size);
-        //         //     f.render_widget(Paragraph::new("Hello World"), size);
-        //         // })
-        //         // .unwrap();
-        //     }
-        // }));
+            f.render_widget(Clear, size);
+            f.render_widget(block, size);
+        })?;
 
         Ok(())
     }
-
-    pub fn stop(&self) {
-        // TODO: wait before forcing the abort
-        if let Some(task) = &self.task {
-            task.abort();
-        }
-    }
 }
 
-// impl<R, W> Drop for Dashboard<R, W>
-// where
-//     R: AsyncRead,
-//     W: std::io::Write + Clone + Send + 'static,
-impl Drop for Dashboard {
-    #[tracing::instrument(skip(self))]
-    fn drop(&mut self) {
-        self.stop();
+#[async_trait::async_trait]
+impl Handler for Dashboard {
+    #[tracing::instrument(skip(self, reader, writer))]
+    async fn start(
+        &self,
+        mut reader: mpsc::UnboundedReceiver<Event>,
+        writer: Writer,
+    ) -> Result<()> {
+        let (backend, window_size) = Backend::with_size(writer);
+
+        let mut term = Terminal::new(backend)?;
+
+        while let Some(ev) = reader.recv().await {
+            match ev {
+                Event::Keypress(Keypress::EndOfText) | Event::Shutdown => break,
+                Event::Resize(win) => {
+                    let mut size = window_size.lock().unwrap();
+                    *size = win;
+                }
+                Event::Render => self.render(&mut term)?,
+                _ => {}
+            }
+        }
+
+        reset_terminal(&mut term)?;
+
+        Ok(())
     }
 }
 
