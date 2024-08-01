@@ -1,29 +1,24 @@
 use std::{
     borrow::{Borrow, Cow},
-    f32::consts::E,
     str,
     sync::Arc,
 };
 
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
-use ratatui::{
-    backend::CrosstermBackend,
-    widgets::{Block, Borders, Clear, Paragraph},
-    Terminal,
-};
+use ratatui::{backend::WindowSize, layout::Size};
 use russh::{
     keys::key::PublicKey,
-    server::{self, Auth, Handle, Handler, Msg, Response},
-    Channel, ChannelId, Disconnect, MethodSet,
+    server::{self, Auth, Response},
+    ChannelId, MethodSet,
 };
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
-use tokio_util::{io::SyncIoBridge, time::delay_queue::Key};
 use tracing::info;
 
 use crate::{
     dashboard::Dashboard,
+    events::Event,
     identity::user::User,
+    io::Channel,
     openid,
     ssh::{Authenticate, Controller},
 };
@@ -34,8 +29,7 @@ pub enum State {
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     Authenticated(User, String),
-    ChannelCreated(Channel<server::Msg>),
-    PtyStarted,
+    PtyStarted(Channel),
 }
 
 impl State {
@@ -73,12 +67,8 @@ impl State {
         *self = State::Authenticated(user, method);
     }
 
-    fn channel_created(&mut self, channel: Channel<server::Msg>) {
-        *self = State::ChannelCreated(channel);
-    }
-
-    fn pty_started(&mut self) {
-        *self = State::PtyStarted;
+    fn pty_started(&mut self, channel: Channel) {
+        *self = State::PtyStarted(channel);
     }
 }
 
@@ -112,7 +102,6 @@ pub struct Session {
     controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
     state: State,
-    dashboard: Option<Dashboard>,
 }
 
 impl Session {
@@ -121,7 +110,6 @@ impl Session {
             controller,
             identity_provider,
             state: State::Unauthenticated,
-            dashboard: None,
         }
     }
 
@@ -193,13 +181,11 @@ impl Session {
 
 // TODO(thomas): return valid errors back to the client.
 #[async_trait::async_trait]
-impl Handler for Session {
+impl server::Handler for Session {
     type Error = eyre::Error;
 
     #[tracing::instrument(skip(self, key))]
     async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth> {
-        info!("auth_publickey");
-
         self.state.key_offered(key);
 
         if let Some(user) = key.authenticate(self.controller.borrow()).await? {
@@ -220,8 +206,6 @@ impl Handler for Session {
         _: &str,
         _: Option<Response<'async_trait>>,
     ) -> Result<Auth> {
-        info!("auth_keyboard_interactive");
-
         match self.state {
             State::Unauthenticated | State::KeyOffered(_) => self.send_code().await,
             State::CodeSent(..) => self.authenticate_code().await,
@@ -231,8 +215,6 @@ impl Handler for Session {
 
     #[tracing::instrument(skip(self, _session))]
     async fn auth_succeeded(&mut self, _session: &mut server::Session) -> Result<()> {
-        info!("auth_succeeded");
-
         let State::Authenticated(ref user, ref method) = self.state else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
@@ -242,92 +224,54 @@ impl Handler for Session {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, channel, session))]
     async fn channel_open_session(
         &mut self,
-        channel: Channel<server::Msg>,
-        session: &mut server::Session,
+        _: russh::Channel<server::Msg>,
+        _: &mut server::Session,
     ) -> Result<bool> {
-        info!("channel_open_session: {}", channel.id());
-
-        let State::Authenticated(user, _) = &self.state else {
-            return Err(eyre!("Unexpected state: {:?}", self.state));
-        };
-
-        // self.state.channel_created(channel);
-
-        // let mut channel = channel;
-
-        let mut dashboard = Dashboard::new(user.clone());
-
-        dashboard.start(channel.into_stream())?;
-
-        self.dashboard = Some(dashboard);
-
-        // self.state.channel_created();
-
-        // tokio::spawn(async move {
-        //     loop {
-        //         let data = channel.make_reader().read(&mut [0u8;
-        // 1024]).await.unwrap();
-
-        //         info!("data: {:?}", data);
-        //     }
-        // });
-
         Ok(true)
     }
 
-    #[tracing::instrument(skip(self, channel, data, session))]
-    async fn data(
-        &mut self,
-        channel: ChannelId,
-        data: &[u8],
-        session: &mut server::Session,
-    ) -> Result<()> {
-        info!("data: {:?}", data);
+    #[tracing::instrument(skip(self, data))]
+    async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
+        let State::PtyStarted(channel) = &self.state else {
+            // TODO: this should probably be a debug statement.
+            return Err(eyre!("Dashboard not started"));
+        };
 
-        if data[0] == b'q' {
-            return Err(eyre!("User requested disconnect"));
-        }
-
-        Ok(())
-    }
-
-    async fn extended_data(
-        &mut self,
-        channel: ChannelId,
-        data_type: u32,
-        data: &[u8],
-        session: &mut server::Session,
-    ) -> Result<()> {
-        info!("extended_data");
-
-        Ok(())
+        channel.send(data.try_into()?)
     }
 
     async fn window_change_request(
         &mut self,
         _: ChannelId,
-        col_width: u32,
-        row_height: u32,
-        _: u32,
-        _: u32,
+        cx: u32,
+        cy: u32,
+        px: u32,
+        py: u32,
         _: &mut server::Session,
     ) -> Result<(), Self::Error> {
-        info!("window_change_request");
+        if let State::PtyStarted(channel) = &self.state {
+            #[allow(clippy::cast_possible_truncation)]
+            channel.send(Event::Resize(WindowSize {
+                columns_rows: Size {
+                    width: cx as u16,
+                    height: cy as u16,
+                },
+                pixels: Size {
+                    width: px as u16,
+                    height: py as u16,
+                },
+            }))?;
+        };
 
         Ok(())
     }
 
-    fn adjust_window(&mut self, _: ChannelId, current: u32) -> u32 {
-        info!("adjust_window");
-
-        current
-    }
-
     async fn channel_close(&mut self, _: ChannelId, _: &mut server::Session) -> Result<()> {
-        info!("channel_close");
+        if let State::PtyStarted(channel) = &mut self.state {
+            channel.stop().await?;
+        };
 
         Ok(())
     }
@@ -337,35 +281,33 @@ impl Handler for Session {
         &mut self,
         id: ChannelId,
         term: &str,
-        width: u32,
-        height: u32,
-        _: u32,
-        _: u32,
+        cx: u32,
+        cy: u32,
+        px: u32,
+        py: u32,
         modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
     ) -> Result<()> {
-        info!("pty_request: {}", id);
+        let State::Authenticated(user, _) = &self.state else {
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
 
-        // {
-        //     let State::ChannelCreated(channel) = &self.state else {
-        //         return Err(eyre!("Unexpected state: {:?}", self.state));
-        //     };
+        let dashboard = Dashboard::new(self.controller.clone(), user.clone());
+        let mut channel = Channel::new(id, session.handle().clone());
+        channel.start(dashboard)?;
+        #[allow(clippy::cast_possible_truncation)]
+        channel.send(Event::Resize(WindowSize {
+            columns_rows: Size {
+                width: cx as u16,
+                height: cy as u16,
+            },
+            pixels: Size {
+                width: px as u16,
+                height: py as u16,
+            },
+        }))?;
 
-        //     let foo = channel.take();
-
-        //     self.dashboard.as_mut().unwrap().start(
-        //         channel.clone().into_stream(),
-        //         width.try_into()?,
-        //         height.try_into()?,
-        //     )?;
-        // }
-
-        self.state.pty_started();
-
-        // self.dashboard
-        //     .take()
-        //     .unwrap()
-        //     .start(width.try_into()?, height.try_into()?)?;
+        self.state.pty_started(channel);
 
         Ok(())
     }

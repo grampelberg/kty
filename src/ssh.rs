@@ -66,7 +66,11 @@ impl Server for UIServer {
     }
 
     fn handle_session_error(&mut self, error: <Self::Handler as Handler>::Error) {
-        error!("unhandled session error: {error:?}");
+        if let Some(russh::Error::IO(_)) = error.downcast_ref::<russh::Error>() {
+            return;
+        }
+
+        error!("unhandled session error: {:#?}", error);
     }
 }
 

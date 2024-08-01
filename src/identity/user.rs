@@ -102,3 +102,9 @@ impl KubeID for User {
         self.spec.id.kube_id()
     }
 }
+
+impl std::fmt::Display for User {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "User({})", self.spec.id)
+    }
+}
