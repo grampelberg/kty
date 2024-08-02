@@ -41,7 +41,7 @@ json_value_merge = "2.0.0"
 jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
 kube = { version = "0.93.1", features = ["derive", "runtime"] }
-ratatui = "0.27.0"
+ratatui = { version = "0.27.0", features = ["unstable-rendered-line-info", "unstable-widget-ref"] }
 regex = "1.10.5"
 reqwest = { version = "0.12.5", features = ["json", "stream", "multipart"] }
 russh = "0.44.0"

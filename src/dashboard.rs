@@ -1,3 +1,5 @@
+mod table;
+
 use std::sync::Arc;
 
 use eyre::{eyre, Result};
@@ -5,8 +7,8 @@ use ratatui::{
     backend::{self, CrosstermBackend},
     layout::Rect,
     terminal::TerminalOptions,
-    widgets::{Block, Borders, Clear, Paragraph},
-    Terminal, Viewport,
+    widgets::{Block, Borders, Clear, Paragraph, WidgetRef},
+    Frame, Terminal, Viewport,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
@@ -36,17 +38,12 @@ impl Dashboard {
 }
 
 impl Dashboard {
-    fn render(&self, term: &mut Terminal<Backend>) -> Result<()> {
-        term.draw(|f| {
-            let size = f.size();
+    fn render(&self, term: &mut Terminal<Backend>, root: &impl WidgetRef) -> Result<()> {
+        term.draw(|frame| {
+            let size = frame.size();
 
-            let block = Block::default()
-                .title("Dashboard")
-                .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Rounded);
-
-            f.render_widget(Clear, size);
-            f.render_widget(block, size);
+            frame.render_widget(Clear, size);
+            frame.render_widget(root, size);
         })?;
 
         Ok(())
@@ -65,6 +62,8 @@ impl Handler for Dashboard {
 
         let mut term = Terminal::new(backend)?;
 
+        let root = table::Table::new(self.controller.clone());
+
         while let Some(ev) = reader.recv().await {
             match ev {
                 Event::Keypress(Keypress::EndOfText) | Event::Shutdown => break,
@@ -72,7 +71,7 @@ impl Handler for Dashboard {
                     let mut size = window_size.lock().unwrap();
                     *size = win;
                 }
-                Event::Render => self.render(&mut term)?,
+                Event::Render => self.render(&mut term, &root)?,
                 _ => {}
             }
         }
