@@ -1,10 +1,14 @@
-pub mod resources;
-pub mod serve;
-pub mod users;
+mod dashboard;
+mod resources;
+mod serve;
+mod users;
+
+use std::sync::Mutex;
 
 use cata::{output::Format, Command, Container};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
+use clio::Output;
 use eyre::Result;
 use tracing_error::ErrorLayer;
 use tracing_log::AsTrace;
@@ -19,6 +23,10 @@ pub struct Root {
     #[command(flatten)]
     verbosity: Verbosity,
 
+    /// Log destination, defaults to stderr
+    #[arg(long, default_value="--", value_parser = allow_stderr)]
+    log_file: Output,
+
     /// Output format
     #[arg(short, long, value_enum, default_value_t = Format::Pretty, global = true)]
     pub output: Format,
@@ -26,6 +34,7 @@ pub struct Root {
 
 #[derive(Subcommand, Container)]
 enum RootCmd {
+    Dashboard(dashboard::Dashboard),
     Resources(resources::Resources),
     Serve(serve::Serve),
     Users(users::Users),
@@ -39,7 +48,7 @@ impl Command for Root {
 
         let fmt = tracing_subscriber::fmt::layer()
             .pretty()
-            .with_writer(std::io::stderr)
+            .with_writer(Mutex::new(self.log_file.clone()))
             .with_filter(filter);
 
         let registry = tracing_subscriber::registry()
@@ -50,4 +59,12 @@ impl Command for Root {
 
         Ok(())
     }
+}
+
+fn allow_stderr(val: &str) -> Result<Output, clio::Error> {
+    if val == "--" {
+        return Ok(Output::std_err());
+    }
+
+    Output::new(val)
 }

@@ -32,6 +32,8 @@ pub(crate) async fn create(
 
     let results: Vec<_> = futures::stream::iter(all())
         .map(|resource| async move {
+            info!("creating/updating CRD: {}", resource.name_any());
+
             if update {
                 client
                     .patch(

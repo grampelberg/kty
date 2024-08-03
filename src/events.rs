@@ -1,5 +1,6 @@
 use std::str;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
 use ratatui::backend::WindowSize;
 
@@ -20,7 +21,7 @@ impl TryInto<Event> for &[u8] {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Keypress {
     Null,
     StartOfHeader,
@@ -129,6 +130,88 @@ impl TryInto<Keypress> for &[u8] {
             _ => Ok(Keypress::Printable(
                 str::from_utf8(self).unwrap().to_string(),
             )),
+        }
+    }
+}
+
+impl TryInto<Keypress> for KeyEvent {
+    type Error = eyre::Report;
+
+    fn try_into(self) -> Result<Keypress> {
+        match self {
+            KeyEvent {
+                code: KeyCode::Null,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Null),
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Backspace),
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Linefeed),
+            KeyEvent {
+                code: KeyCode::Left,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::CursorLeft),
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::CursorRight),
+            KeyEvent {
+                code: KeyCode::Up,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::CursorUp),
+            KeyEvent {
+                code: KeyCode::Down,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::CursorDown),
+            KeyEvent {
+                code: KeyCode::Home,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::CursorHome),
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Delete),
+            KeyEvent {
+                code: KeyCode::Esc,
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Escape),
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::CONTROL,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::EndOfText),
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: _,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Printable(c.to_string())),
+            _ => Err(eyre!("Unknown keypress")),
         }
     }
 }
