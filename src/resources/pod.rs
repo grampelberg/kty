@@ -1,6 +1,10 @@
+use std::borrow::Borrow;
+
 use chrono::{format::strftime, TimeDelta, Utc};
 use humantime::format_duration;
-use k8s_openapi::api::core::v1::{ContainerStatus, Pod};
+use k8s_openapi::api::core::v1::{
+    ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
+};
 use kube::ResourceExt;
 use ratatui::{
     backend::{self, CrosstermBackend},
@@ -17,11 +21,43 @@ use tracing::info;
 
 use crate::widget::TableRow;
 
+pub enum Phase {
+    Pending,
+    Running,
+    Succeeded,
+    Unknown(String),
+}
+
+impl From<&Option<String>> for Phase {
+    fn from(s: &Option<String>) -> Self {
+        match s {
+            Some(s) => match s.as_str() {
+                "Pending" => Phase::Pending,
+                "Running" => Phase::Running,
+                "Succeeded" => Phase::Succeeded,
+                _ => Phase::Unknown(s.clone()),
+            },
+            None => Phase::Unknown("Unknown".to_string()),
+        }
+    }
+}
+
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Phase::Pending => write!(f, "Pending"),
+            Phase::Running => write!(f, "Running"),
+            Phase::Succeeded => write!(f, "Succeeded"),
+            Phase::Unknown(s) => write!(f, "{s}"),
+        }
+    }
+}
+
 pub trait PodExt {
     fn age(&self) -> TimeDelta;
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
-    fn status(&self) -> String;
+    fn status(&self) -> Phase;
 }
 
 impl PodExt for Pod {
@@ -85,15 +121,55 @@ impl PodExt for Pod {
         format!("{total} ({})", (Utc::now() - recent).to_age())
     }
 
-    fn status(&self) -> String {
+    fn status(&self) -> Phase {
         let Some(status) = &self.status else {
-            return String::new();
+            return Some(String::new()).borrow().into();
         };
 
-        match &status.phase {
-            Some(phase) => phase.clone(),
-            None => String::new(),
+        let Some(containers) = &status.container_statuses else {
+            return status.phase.borrow().into();
+        };
+
+        let statuses = containers
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    ContainerStatus {
+                        state: Some(ContainerState {
+                            waiting: Some(_),
+                            ..
+                        }),
+                        ..
+                    }
+                )
+            })
+            .map(|c| match &c.state {
+                Some(
+                    ContainerState {
+                        waiting:
+                            Some(ContainerStateWaiting {
+                                reason: Some(x), ..
+                            }),
+                        ..
+                    }
+                    | ContainerState {
+                        terminated:
+                            Some(ContainerStateTerminated {
+                                reason: Some(x), ..
+                            }),
+                        ..
+                    },
+                ) => x.clone(),
+                _ => "unknown".to_string(),
+            })
+            .collect::<Vec<String>>();
+
+        if statuses.is_empty() {
+            return status.phase.borrow().into();
         }
+
+        Some(statuses.join(", ")).borrow().into()
     }
 }
 
@@ -111,21 +187,21 @@ impl<'a> TableRow<'a> for Pod {
 
     fn constraints() -> Vec<Constraint> {
         vec![
+            Constraint::Max(20),
             Constraint::Min(10),
-            Constraint::Min(10),
-            Constraint::Min(3),
-            Constraint::Min(10),
-            Constraint::Min(1),
-            Constraint::Min(10),
+            Constraint::Max(10),
+            Constraint::Max(10),
+            Constraint::Max(10),
+            Constraint::Max(10),
         ]
     }
 
     fn row(&self) -> Row {
         Row::new(vec![
-            Cell::from(self.name_any()),
             Cell::from(self.namespace().unwrap()),
+            Cell::from(self.name_any()),
             Cell::from(self.ready()),
-            Cell::from(self.status()),
+            Cell::from(self.status().to_string()),
             Cell::from(self.restarts()),
             Cell::from(self.age().to_age()),
         ])
