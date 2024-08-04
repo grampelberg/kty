@@ -1,10 +1,14 @@
+use std::borrow::{Borrow, BorrowMut};
+
 use k8s_openapi::api::core::v1::Pod;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     prelude::*,
     style::{palette::tailwind, Modifier, Style},
-    widgets::{Block, Borders, Row, ScrollbarState, StatefulWidget, Table, TableState, WidgetRef},
+    widgets::{
+        Block, Borders, Clear, Paragraph, Row, StatefulWidget, Table, TableState, WidgetRef,
+    },
 };
 
 use crate::{
@@ -51,25 +55,41 @@ impl Default for TableStyle {
 // - Render scrollbar only if there's something that needs to be scrolled.
 pub struct PodTable {
     pods: Store<Pod>,
-    scroll: ScrollbarState,
     table: TableState,
-    selected: Option<String>,
+    cmd: Option<Command>,
 }
 
 impl PodTable {
     pub fn new(client: kube::Client) -> Self {
         Self {
             pods: Store::new(client),
-            scroll: ScrollbarState::default().content_length(1),
             table: TableState::default().with_selected(0),
-            selected: None,
+
+            cmd: None,
         }
+    }
+
+    fn scroll(&mut self, key: &Keypress) {
+        let current = self.table.selected().unwrap_or_default();
+
+        let next = match key {
+            Keypress::CursorUp => current.saturating_sub(1),
+            Keypress::CursorDown => current.saturating_add(1),
+            _ => return,
+        };
+
+        let max = self.pods.state().len().saturating_sub(1);
+
+        self.table.select(Some(next.clamp(0, max)));
     }
 }
 
 impl WidgetRef for PodTable {
     // TODO: implement a loading screen.
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        let [table_area, cmd_area] =
+            Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
+
         let style = TableStyle::default();
 
         let border = Block::default()
@@ -79,8 +99,17 @@ impl WidgetRef for PodTable {
 
         let state = self.pods.state();
 
+        let filter = self.cmd.as_ref().map(Command::content);
+
         let rows: Vec<Row> = state
             .iter()
+            .filter(|pod| {
+                if filter.is_none() || filter.unwrap().is_empty() {
+                    return true;
+                }
+
+                pod.matches(filter.unwrap())
+            })
             .map(|pod| {
                 let row = pod.row();
 
@@ -97,25 +126,77 @@ impl WidgetRef for PodTable {
             .block(border)
             .highlight_style(style.selected);
         StatefulWidget::render(&table, area, buf, &mut self.table.clone());
+
+        if self.cmd.is_none() {
+            return;
+        }
+
+        // Command ends up being written *over the table (which writes to the whole
+        // screen). The clear makes sure that table items don't show up weirdly behind a
+        // transparent command buffer.
+        Widget::render(Clear, cmd_area, buf);
+
+        WidgetRef::render_ref(self.cmd.as_ref().unwrap(), cmd_area, buf);
     }
 }
 
 impl Dispatch for PodTable {
-    fn dispatch(&mut self, event: Event) {
+    fn dispatch(&mut self, event: &Event) {
         let Event::Keypress(key) = event else {
             return;
         };
 
-        let current = self.table.selected().unwrap_or_default();
+        if let Some(ref mut cmd) = self.cmd {
+            cmd.dispatch(event);
+        }
 
-        let next = match key {
-            Keypress::CursorUp => current.saturating_sub(1),
-            Keypress::CursorDown => current.saturating_add(1),
-            _ => return,
-        };
+        match key {
+            Keypress::Escape => self.cmd = None,
+            Keypress::CursorUp | Keypress::CursorDown => self.scroll(&key),
+            Keypress::Printable(x) => {
+                if x == "/" && self.cmd.is_none() {
+                    self.cmd = Some(Command::new());
+                }
+            }
+            _ => {}
+        }
+    }
+}
 
-        let max = self.pods.state().len().saturating_sub(1);
+struct Command {
+    content: String,
+}
 
-        self.table.select(Some(next.clamp(0, max)));
+impl Command {
+    fn new() -> Self {
+        Self {
+            content: String::new(),
+        }
+    }
+
+    fn content(&self) -> &str {
+        self.content.as_str()
+    }
+}
+
+impl WidgetRef for Command {
+    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.content())
+            .block(Block::default().title("Command").borders(Borders::ALL))
+            .render(area, buf);
+    }
+}
+
+impl Dispatch for Command {
+    fn dispatch(&mut self, event: &Event) {
+        match event {
+            Event::Keypress(Keypress::Printable(x)) => {
+                self.content += x;
+            }
+            Event::Keypress(Keypress::Backspace) => {
+                self.content.pop();
+            }
+            _ => {}
+        }
     }
 }

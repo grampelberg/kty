@@ -12,5 +12,5 @@ pub trait TableRow<'a> {
 }
 
 pub trait Dispatch {
-    fn dispatch(&mut self, event: Event);
+    fn dispatch(&mut self, event: &Event);
 }

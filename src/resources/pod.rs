@@ -50,6 +50,8 @@ pub trait PodExt {
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
+
+    fn matches(&self, filter: &str) -> bool;
 }
 
 impl PodExt for Pod {
@@ -162,6 +164,10 @@ impl PodExt for Pod {
         }
 
         Some(statuses.join(", ")).borrow().into()
+    }
+
+    fn matches(&self, filter: &str) -> bool {
+        self.name_any().contains(filter)
     }
 }
 
