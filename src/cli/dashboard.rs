@@ -45,7 +45,7 @@ async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
                 let key: Keypress = key.try_into()?;
                 sender.send(Event::Keypress(key.clone()))?;
 
-                if matches!(key, Keypress::EndOfText | Keypress::Escape) {
+                if matches!(key, Keypress::EndOfText) {
                     break;
                 }
             }
@@ -71,11 +71,11 @@ where
         match ev.clone() {
             Event::Render => {}
             Event::Keypress(key) => {
-                if matches!(key, Keypress::EndOfText | Keypress::Escape) {
+                if matches!(key, Keypress::EndOfText) {
                     break;
                 }
 
-                root.dispatch(ev);
+                root.dispatch(&ev);
             }
             _ => {
                 continue;
