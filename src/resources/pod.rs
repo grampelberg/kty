@@ -7,17 +7,9 @@ use k8s_openapi::api::core::v1::{
 };
 use kube::ResourceExt;
 use ratatui::{
-    backend::{self, CrosstermBackend},
-    buffer::Buffer,
-    layout::{Constraint, Flex, Layout, Rect},
-    terminal::TerminalOptions,
-    text::Text,
-    widgets::{
-        self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef,
-    },
-    Frame, Terminal, Viewport,
+    layout::Constraint,
+    widgets::{Cell, Row},
 };
-use tracing::info;
 
 use crate::widget::TableRow;
 
