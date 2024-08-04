@@ -7,6 +7,7 @@ mod io;
 mod openid;
 mod resources;
 mod ssh;
+mod widget;
 
 use cata::execute;
 use clap::Parser;

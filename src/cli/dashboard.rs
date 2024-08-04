@@ -1,4 +1,8 @@
-use std::{future::ready, iter::Iterator, sync::Arc};
+use std::{
+    future::ready,
+    iter::Iterator,
+    sync::{Arc, Mutex},
+};
 
 use cata::{Command, Container};
 use clap::Parser;
@@ -9,13 +13,13 @@ use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{ListParams, ObjectList},
+    runtime,
     runtime::{
         reflector::{self},
-        watcher,
-        watcher::Config,
+        watcher::{self, Config},
         WatchStreamExt,
     },
-    Api,
+    Api, ResourceExt,
 };
 use ratatui::{
     backend::{self, CrosstermBackend},
@@ -23,7 +27,9 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     terminal::TerminalOptions,
     text::Text,
-    widgets::{self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Widget, WidgetRef},
+    widgets::{
+        self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef,
+    },
     Frame, Terminal, Viewport,
 };
 use serde::{de::DeserializeOwned, Deserialize};
@@ -38,7 +44,11 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::events::{Event, Keypress};
+use crate::{
+    events::{Event, Keypress},
+    resources::pod::PodExt,
+    widget::TableRow,
+};
 
 #[derive(Parser, Container)]
 pub struct Dashboard {
@@ -88,13 +98,15 @@ where
         frame.render_widget(Clear, frame.size());
     })?;
 
+    let mut root = PodTable::new(kube::Client::try_default().await?);
+
     while let Some(ev) = rx.recv().await {
-        match ev {
+        match ev.clone() {
             Event::Render => {
                 term.draw(|frame| {
                     let size = frame.size();
 
-                    frame.render_widget(Clear, size);
+                    frame.render_widget(&root, size);
                 })?;
             }
             Event::Keypress(key) => {
@@ -102,7 +114,7 @@ where
                     break;
                 }
 
-                info!("keypress: {:?}", key);
+                root.dispatch(ev);
             }
             _ => {}
         }
@@ -119,16 +131,16 @@ impl Command for Dashboard {
 
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Event>();
 
-        let mut js = JoinSet::new();
+        let mut background = JoinSet::new();
 
-        js.spawn(events(self.ticks.into(), sender.clone()));
-        js.spawn(ui(receiver, std::io::stdout()));
+        background.spawn(events(self.ticks.into(), sender.clone()));
+        background.spawn(ui(receiver, std::io::stdout()));
 
         // Exit when *anything* ends (on error or otherwise).
-        while let Some(res) = js.join_next().await {
+        while let Some(res) = background.join_next().await {
             res??;
 
-            js.shutdown().await;
+            background.shutdown().await;
         }
 
         Ok(())
@@ -142,11 +154,32 @@ impl Drop for Dashboard {
     }
 }
 
-struct PodTable {}
+struct PodTable {
+    state: Store<Pod>,
+}
+
+impl PodTable {
+    fn new(client: kube::Client) -> Self {
+        Self {
+            state: Store::new(client),
+        }
+    }
+}
 
 impl WidgetRef for PodTable {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        info!("rendering pod table");
+        // TODO: implement a loading screen.
+
+        let border = Block::default().title("Pods").borders(Borders::ALL);
+
+        let state = self.state.state();
+
+        let rows = state.iter().map(|pod| pod.row()).collect_vec();
+
+        Table::new(rows, Pod::constraints())
+            .header(Pod::header())
+            .block(border)
+            .render(area, buf);
     }
 }
 
@@ -180,24 +213,33 @@ where
         + DeserializeOwned
         + 'static,
 {
+    // TODO: need to have a way to filter stuff out (with some defaults) to keep
+    // from memory going nuts.
     fn new(client: kube::Client) -> Self {
-        println!("stuff: {}", std::any::type_name::<K>());
-
-        // let client = kube::Client::try_default().await?;
         let (reader, writer) = reflector::store();
-        let stream = watcher(Api::<K>::all(client), Config::default())
+        let stream = runtime::watcher(Api::<K>::all(client), Config::default())
             .default_backoff()
             .reflect(writer)
             .applied_objects()
             .boxed();
 
-        let task = tokio::spawn(async move { stream.for_each(|_| ready(())).await });
+        let task = tokio::spawn(async move {
+            stream.for_each(|_| ready(())).await;
+        });
 
         Self { task, reader }
     }
 
     fn state(&self) -> Vec<Arc<K>> {
         self.reader.state()
+    }
+
+    // TODO: the naive implementation of this (loading is false on first element of
+    // the stream), happens *fast*. It feels like there should be *something* that
+    // comes back when the initial sync has fully completed but I can't find
+    // anything in kube-rs yet that does that.
+    fn loading(&self) -> bool {
+        false
     }
 }
 

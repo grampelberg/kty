@@ -1,3 +1,5 @@
+pub mod pod;
+
 use color_eyre::Section;
 use eyre::{eyre, OptionExt, Result};
 use futures::{future, StreamExt, TryStreamExt};

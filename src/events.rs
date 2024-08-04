@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
 use ratatui::backend::WindowSize;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Keypress(Keypress),
     Resize(WindowSize),
