@@ -25,10 +25,13 @@ use ratatui::{
     backend::{self, CrosstermBackend},
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect},
+    prelude::*,
+    style::{palette::tailwind, Modifier, Style},
     terminal::TerminalOptions,
     text::Text,
     widgets::{
-        self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table, Widget, WidgetRef,
+        self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, StatefulWidget, Table,
+        TableState, Widget, WidgetRef,
     },
     Frame, Terminal, Viewport,
 };
@@ -46,7 +49,7 @@ use tracing::info;
 
 use crate::{
     events::{Event, Keypress},
-    resources::pod::PodExt,
+    resources::{pod, pod::PodExt},
     widget::TableRow,
 };
 
@@ -102,13 +105,7 @@ where
 
     while let Some(ev) = rx.recv().await {
         match ev.clone() {
-            Event::Render => {
-                term.draw(|frame| {
-                    let size = frame.size();
-
-                    frame.render_widget(&root, size);
-                })?;
-            }
+            Event::Render => {}
             Event::Keypress(key) => {
                 if matches!(key, Keypress::EndOfText | Keypress::Escape) {
                     break;
@@ -116,8 +113,16 @@ where
 
                 root.dispatch(ev);
             }
-            _ => {}
+            _ => {
+                continue;
+            }
         }
+
+        term.draw(|frame| {
+            let size = frame.size();
+
+            frame.render_widget(&root, size);
+        })?;
     }
 
     Ok(())
@@ -154,38 +159,114 @@ impl Drop for Dashboard {
     }
 }
 
+struct RowStyle {
+    healthy: Style,
+    unhealthy: Style,
+    normal: Style,
+}
+
+impl Default for RowStyle {
+    fn default() -> Self {
+        Self {
+            healthy: Style::default().fg(tailwind::GREEN.c300),
+            unhealthy: Style::default().fg(tailwind::RED.c300),
+            normal: Style::default().fg(tailwind::INDIGO.c300),
+        }
+    }
+}
+
+struct TableStyle {
+    border: Style,
+    header: Style,
+    selected: Style,
+    row: RowStyle,
+}
+
+impl Default for TableStyle {
+    fn default() -> Self {
+        Self {
+            border: Style::default(),
+            header: Style::default().bold(),
+            selected: Style::default().add_modifier(Modifier::REVERSED),
+            row: RowStyle::default(),
+        }
+    }
+}
+
 struct PodTable {
-    state: Store<Pod>,
+    pods: Store<Pod>,
+    table: TableState,
 }
 
 impl PodTable {
     fn new(client: kube::Client) -> Self {
         Self {
-            state: Store::new(client),
+            pods: Store::new(client),
+            table: TableState::default().with_selected(0),
         }
     }
 }
 
 impl WidgetRef for PodTable {
+    // TODO: implement a loading screen.
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        // TODO: implement a loading screen.
+        let style = TableStyle::default();
 
-        let border = Block::default().title("Pods").borders(Borders::ALL);
+        let border = Block::default()
+            .title("Pods")
+            .borders(Borders::ALL)
+            .style(style.border);
 
-        let state = self.state.state();
+        let state = self.pods.state();
 
-        let rows = state.iter().map(|pod| pod.row()).collect_vec();
+        let rows = state
+            .iter()
+            .map(|pod| {
+                let row = pod.row();
 
-        Table::new(rows, Pod::constraints())
-            .header(Pod::header())
+                match pod.status() {
+                    pod::Phase::Pending | pod::Phase::Running => row.style(style.row.normal),
+                    pod::Phase::Succeeded => row.style(style.row.healthy),
+                    pod::Phase::Unknown(_) => row.style(style.row.unhealthy),
+                }
+            })
+            .collect_vec();
+
+        let table = Table::new(rows, Pod::constraints())
+            .header(Pod::header().style(style.header))
             .block(border)
-            .render(area, buf);
+            .highlight_style(style.selected);
+        StatefulWidget::render(&table, area, buf, &mut self.table.clone());
     }
 }
 
 impl Dispatch for PodTable {
     fn dispatch(&mut self, event: Event) {
-        info!("event: {:?}", event);
+        let Event::Keypress(key) = event else {
+            return;
+        };
+
+        let current = self.table.selected().unwrap_or_default();
+
+        let next = match key {
+            Keypress::CursorUp => {
+                if current == 0 {
+                    0
+                } else {
+                    current - 1
+                }
+            }
+            Keypress::CursorDown => {
+                if current == self.pods.state().len() - 1 {
+                    current
+                } else {
+                    current + 1
+                }
+            }
+            _ => return,
+        };
+
+        self.table.select(Some(next));
     }
 }
 
