@@ -1,4 +1,5 @@
 pub mod pod;
+pub mod store;
 
 use color_eyre::Section;
 use eyre::{eyre, OptionExt, Result};
