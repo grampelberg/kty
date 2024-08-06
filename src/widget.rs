@@ -1,8 +1,13 @@
 pub mod pod;
 
-use ratatui::{layout::Constraint, widgets::Row};
+use eyre::Result;
+use ratatui::{
+    layout::{Constraint, Rect},
+    widgets::Row,
+    Frame,
+};
 
-use crate::events::Event;
+use crate::events::{Broadcast, Event};
 
 pub trait TableRow<'a> {
     fn constraints() -> Vec<Constraint>;
@@ -12,5 +17,9 @@ pub trait TableRow<'a> {
 }
 
 pub trait Dispatch {
-    fn dispatch(&mut self, event: &Event);
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
+}
+
+pub trait Screen {
+    fn draw(&mut self, frame: &mut Frame, area: Rect);
 }
