@@ -4,6 +4,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
 use ratatui::backend::WindowSize;
 
+pub enum Broadcast {
+    Consumed,
+    Ignored,
+}
+
 #[derive(Debug, Clone)]
 pub enum Event {
     Keypress(Keypress),

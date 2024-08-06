@@ -1,20 +1,29 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    sync::Arc,
+};
 
+use eyre::Result;
 use k8s_openapi::api::core::v1::Pod;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     prelude::*,
     style::{palette::tailwind, Modifier, Style},
+    widgets,
     widgets::{
         Block, Borders, Clear, Paragraph, Row, StatefulWidget, Table, TableState, WidgetRef,
     },
 };
+use tracing::info;
 
 use crate::{
-    events::{Event, Keypress},
-    resources::{pod, pod::PodExt, store::Store},
-    widget::{Dispatch, TableRow},
+    events::{Broadcast, Event, Keypress},
+    resources::{
+        pod::{self, PodExt},
+        store::Store,
+    },
+    widget::{Dispatch, Screen, TableRow},
 };
 
 struct RowStyle {
@@ -69,6 +78,28 @@ impl PodTable {
         }
     }
 
+    fn items(&self) -> Vec<Arc<Pod>> {
+        let filter = self.cmd.as_ref().map(Command::content);
+
+        if filter.is_none() {
+            return self.pods.state();
+        }
+
+        self.pods
+            .state()
+            .into_iter()
+            .filter(|pod| {
+                let filter = filter.unwrap();
+
+                if filter.is_empty() {
+                    return true;
+                }
+
+                pod.matches(filter)
+            })
+            .collect()
+    }
+
     fn scroll(&mut self, key: &Keypress) {
         let current = self.table.selected().unwrap_or_default();
 
@@ -78,16 +109,44 @@ impl PodTable {
             _ => return,
         };
 
-        let max = self.pods.state().len().saturating_sub(1);
+        let max = self.items().len().saturating_sub(1);
 
         self.table.select(Some(next.clamp(0, max)));
     }
 }
 
-impl WidgetRef for PodTable {
-    // TODO: implement a loading screen.
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        let [table_area, cmd_area] =
+impl Dispatch for PodTable {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        let Event::Keypress(key) = event else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        if let Some(ref mut cmd) = self.cmd {
+            if matches!(cmd.dispatch(event)?, Broadcast::Consumed) {
+                return Ok(Broadcast::Consumed);
+            }
+        }
+
+        match key {
+            Keypress::Escape => self.cmd = None,
+            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
+            Keypress::Printable(x) => {
+                if x == "/" && self.cmd.is_none() {
+                    self.cmd = Some(Command::new());
+                }
+            }
+            _ => {
+                return Ok(Broadcast::Ignored);
+            }
+        };
+
+        Ok(Broadcast::Consumed)
+    }
+}
+
+impl Screen for PodTable {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let [_, cmd_area] =
             Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
 
         let style = TableStyle::default();
@@ -97,19 +156,14 @@ impl WidgetRef for PodTable {
             .borders(Borders::ALL)
             .style(style.border);
 
-        let state = self.pods.state();
+        let state = self.items();
 
-        let filter = self.cmd.as_ref().map(Command::content);
+        if self.table.selected().unwrap_or_default() > state.len() {
+            self.table.select(Some(state.len() - 1));
+        }
 
         let rows: Vec<Row> = state
             .iter()
-            .filter(|pod| {
-                if filter.is_none() || filter.unwrap().is_empty() {
-                    return true;
-                }
-
-                pod.matches(filter.unwrap())
-            })
             .map(|pod| {
                 let row = pod.row();
 
@@ -125,7 +179,7 @@ impl WidgetRef for PodTable {
             .header(Pod::header().style(style.header))
             .block(border)
             .highlight_style(style.selected);
-        StatefulWidget::render(&table, area, buf, &mut self.table.clone());
+        frame.render_stateful_widget(&table, area, &mut self.table);
 
         if self.cmd.is_none() {
             return;
@@ -134,43 +188,22 @@ impl WidgetRef for PodTable {
         // Command ends up being written *over the table (which writes to the whole
         // screen). The clear makes sure that table items don't show up weirdly behind a
         // transparent command buffer.
-        Widget::render(Clear, cmd_area, buf);
+        frame.render_widget(Clear, cmd_area);
 
-        WidgetRef::render_ref(self.cmd.as_ref().unwrap(), cmd_area, buf);
-    }
-}
-
-impl Dispatch for PodTable {
-    fn dispatch(&mut self, event: &Event) {
-        let Event::Keypress(key) = event else {
-            return;
-        };
-
-        if let Some(ref mut cmd) = self.cmd {
-            cmd.dispatch(event);
-        }
-
-        match key {
-            Keypress::Escape => self.cmd = None,
-            Keypress::CursorUp | Keypress::CursorDown => self.scroll(&key),
-            Keypress::Printable(x) => {
-                if x == "/" && self.cmd.is_none() {
-                    self.cmd = Some(Command::new());
-                }
-            }
-            _ => {}
-        }
+        self.cmd.as_mut().unwrap().draw(frame, cmd_area);
     }
 }
 
 struct Command {
     content: String,
+    pos: u16,
 }
 
 impl Command {
     fn new() -> Self {
         Self {
             content: String::new(),
+            pos: 0,
         }
     }
 
@@ -179,24 +212,50 @@ impl Command {
     }
 }
 
-impl WidgetRef for Command {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(self.content())
-            .block(Block::default().title("Command").borders(Borders::ALL))
-            .render(area, buf);
+impl Dispatch for Command {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        match event {
+            Event::Keypress(Keypress::Printable(x)) => {
+                self.content.insert_str(self.pos as usize, x);
+                self.pos = self.pos.saturating_add(1);
+            }
+            Event::Keypress(Keypress::Backspace) => 'outer: {
+                if self.content.is_empty() || self.pos == 0 {
+                    break 'outer;
+                }
+
+                self.content.remove(self.pos as usize - 1);
+                self.pos = self.pos.saturating_sub(1);
+            }
+            Event::Keypress(Keypress::CursorLeft) => {
+                self.pos = self.pos.saturating_sub(1);
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            Event::Keypress(Keypress::CursorRight) => {
+                self.pos = self
+                    .pos
+                    .saturating_add(1)
+                    .clamp(0, self.content.len() as u16);
+            }
+            _ => {
+                return Ok(Broadcast::Ignored);
+            }
+        };
+
+        Ok(Broadcast::Consumed)
     }
 }
 
-impl Dispatch for Command {
-    fn dispatch(&mut self, event: &Event) {
-        match event {
-            Event::Keypress(Keypress::Printable(x)) => {
-                self.content += x;
-            }
-            Event::Keypress(Keypress::Backspace) => {
-                self.content.pop();
-            }
-            _ => {}
-        }
+impl Screen for Command {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let block = Block::default().title("Command").borders(Borders::ALL);
+
+        let cmd_pos = block.inner(area);
+
+        let pg = Paragraph::new(self.content()).block(block);
+
+        frame.render_widget(pg, area);
+
+        frame.set_cursor(cmd_pos.x + self.pos, cmd_pos.y);
     }
 }

@@ -14,7 +14,7 @@ use tokio::{
 
 use crate::{
     events::{Event, Keypress},
-    widget::{pod::PodTable, Dispatch},
+    widget::{pod::PodTable, Dispatch, Screen},
 };
 
 #[derive(Parser, Container)]
@@ -75,7 +75,7 @@ where
                     break;
                 }
 
-                root.dispatch(&ev);
+                root.dispatch(&ev)?;
             }
             _ => {
                 continue;
@@ -85,7 +85,7 @@ where
         term.draw(|frame| {
             let size = frame.size();
 
-            frame.render_widget(&root, size);
+            Screen::draw(&mut root, frame, size);
         })?;
     }
 
