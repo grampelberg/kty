@@ -13,7 +13,7 @@ use syntect::{
 use syntect_tui::into_span;
 use tracing::info;
 
-use super::{Dispatch, Screen};
+use super::{Dispatch, Screen, Widget};
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::Yaml as YamlResource,
@@ -32,7 +32,7 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
     theme
 });
 
-fn to_lines<'a>(txt: &'a str) -> Vec<Line<'a>> {
+fn to_lines(txt: &str) -> Vec<Line> {
     let ps = SyntaxSet::load_defaults_newlines();
     let syntax = ps.find_syntax_by_extension("yaml").unwrap();
 
@@ -54,7 +54,7 @@ fn to_lines<'a>(txt: &'a str) -> Vec<Line<'a>> {
 
 pub struct Yaml<K>
 where
-    K: Resource + Serialize,
+    K: Resource + Serialize + Send,
 {
     resource: Arc<K>,
     txt: String,
@@ -65,7 +65,7 @@ where
 
 impl<K> Yaml<K>
 where
-    K: Resource + Serialize,
+    K: Resource + Serialize + Send,
 {
     pub fn new(resource: Arc<K>) -> Self {
         let txt = resource.to_yaml().unwrap();
@@ -108,9 +108,11 @@ where
     }
 }
 
+impl<K> Widget for Yaml<K> where K: Resource + Serialize + Send + Sync {}
+
 impl<K> Dispatch for Yaml<K>
 where
-    K: Resource + Serialize,
+    K: Resource + Serialize + Send,
 {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress((key)) = event else {
@@ -133,7 +135,7 @@ where
 
 impl<K> Screen for Yaml<K>
 where
-    K: Resource + Serialize,
+    K: Resource + Serialize + Send,
 {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         self.area = area;
