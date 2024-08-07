@@ -7,6 +7,7 @@ use ratatui::backend::WindowSize;
 pub enum Broadcast {
     Consumed,
     Ignored,
+    Exited,
 }
 
 #[derive(Debug, Clone)]
@@ -38,10 +39,10 @@ pub enum Keypress {
     Bell,
     Backspace,
     HorizontalTab,
-    Linefeed,
+    Enter, // Linefeed
     VerticalTab,
     Formfeed,
-    CarriageReturn,
+    // CarriageReturn, // Enter
     ShiftOut,
     ShiftIn,
     DLE,
@@ -109,10 +110,9 @@ impl TryInto<Keypress> for &[u8] {
             b'\x07' => Ok(Keypress::Bell),
             b'\x08' => Ok(Keypress::Backspace),
             b'\x09' => Ok(Keypress::HorizontalTab),
-            b'\x0A' => Ok(Keypress::Linefeed),
+            b'\x0A' | b'\x0D' => Ok(Keypress::Enter),
             b'\x0B' => Ok(Keypress::VerticalTab),
             b'\x0C' => Ok(Keypress::Formfeed),
-            b'\x0D' => Ok(Keypress::CarriageReturn),
             b'\x0E' => Ok(Keypress::ShiftOut),
             b'\x0F' => Ok(Keypress::ShiftIn),
             b'\x10' => Ok(Keypress::DLE),
@@ -161,7 +161,7 @@ impl TryInto<Keypress> for KeyEvent {
                 modifiers: _,
                 kind: _,
                 state: _,
-            } => Ok(Keypress::Linefeed),
+            } => Ok(Keypress::Enter),
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: _,

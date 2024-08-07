@@ -13,7 +13,7 @@ use tokio::{
 };
 
 use crate::{
-    events::{Event, Keypress},
+    events::{Broadcast, Event, Keypress},
     widget::{pod::PodTable, Dispatch, Screen},
 };
 
@@ -75,7 +75,9 @@ where
                     break;
                 }
 
-                root.dispatch(&ev)?;
+                if matches!(root.dispatch(&ev)?, Broadcast::Exited) {
+                    break;
+                }
             }
             _ => {
                 continue;

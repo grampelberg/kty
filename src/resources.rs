@@ -16,7 +16,7 @@ use kube::{
     CustomResourceExt, Resource,
 };
 use regex::Regex;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
 use crate::identity;
@@ -177,5 +177,21 @@ where
         left.merge(right);
 
         Ok(left)
+    }
+}
+
+pub trait Yaml<K>
+where
+    K: Resource + Serialize,
+{
+    fn to_yaml(&self) -> Result<String>;
+}
+
+impl<K> Yaml<K> for K
+where
+    K: Resource + Serialize,
+{
+    fn to_yaml(&self) -> Result<String> {
+        serde_yaml::to_string(&self).map_err(Into::into)
     }
 }

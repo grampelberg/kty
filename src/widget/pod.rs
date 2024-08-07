@@ -1,20 +1,29 @@
 use std::{
     borrow::{Borrow, BorrowMut},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use eyre::Result;
 use k8s_openapi::api::core::v1::Pod;
+use kube::ResourceExt;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     prelude::*,
     style::{palette::tailwind, Modifier, Style},
-    widgets,
+    text::Line,
     widgets::{
-        Block, Borders, Clear, Paragraph, Row, StatefulWidget, Table, TableState, WidgetRef,
+        self, block::Title, Block, Borders, Clear, Paragraph, Row, StatefulWidget,
+        StatefulWidgetRef, Table, TableState, WidgetRef,
     },
 };
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Theme, ThemeSet},
+    parsing::SyntaxSet,
+    util::{as_24_bit_terminal_escaped, LinesWithEndings},
+};
+use syntect_tui::into_span;
 use tracing::info;
 
 use crate::{
@@ -22,9 +31,23 @@ use crate::{
     resources::{
         pod::{self, PodExt},
         store::Store,
+        Yaml,
     },
     widget::{Dispatch, Screen, TableRow},
 };
+
+static THEME: LazyLock<Theme> = LazyLock::new(|| {
+    let ts = ThemeSet::load_defaults();
+    let mut theme = ts.themes["base16-ocean.dark"].clone();
+    theme.settings.background = Some(syntect::highlighting::Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+
+    theme
+});
 
 struct RowStyle {
     healthy: Style,
@@ -62,19 +85,21 @@ impl Default for TableStyle {
 
 // - Handle items being removed/added
 // - Render scrollbar only if there's something that needs to be scrolled.
-pub struct PodTable {
+pub struct PodTable<'a> {
     pods: Store<Pod>,
     table: TableState,
     cmd: Option<Command>,
+    detail: Option<Detail<'a>>,
 }
 
-impl PodTable {
+impl PodTable<'_> {
     pub fn new(client: kube::Client) -> Self {
         Self {
             pods: Store::new(client),
             table: TableState::default().with_selected(0),
 
             cmd: None,
+            detail: None,
         }
     }
 
@@ -113,42 +138,8 @@ impl PodTable {
 
         self.table.select(Some(next.clamp(0, max)));
     }
-}
 
-impl Dispatch for PodTable {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        let Event::Keypress(key) = event else {
-            return Ok(Broadcast::Ignored);
-        };
-
-        if let Some(ref mut cmd) = self.cmd {
-            if matches!(cmd.dispatch(event)?, Broadcast::Consumed) {
-                return Ok(Broadcast::Consumed);
-            }
-        }
-
-        match key {
-            Keypress::Escape => self.cmd = None,
-            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
-            Keypress::Printable(x) => {
-                if x == "/" && self.cmd.is_none() {
-                    self.cmd = Some(Command::new());
-                }
-            }
-            _ => {
-                return Ok(Broadcast::Ignored);
-            }
-        };
-
-        Ok(Broadcast::Consumed)
-    }
-}
-
-impl Screen for PodTable {
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let [_, cmd_area] =
-            Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
-
+    fn list(&mut self, frame: &mut Frame, area: Rect) {
         let style = TableStyle::default();
 
         let border = Block::default()
@@ -180,6 +171,76 @@ impl Screen for PodTable {
             .block(border)
             .highlight_style(style.selected);
         frame.render_stateful_widget(&table, area, &mut self.table);
+    }
+
+    fn detail(&mut self, frame: &mut Frame, area: Rect) {
+        self.detail.as_mut().unwrap().draw(frame, area);
+    }
+}
+
+impl Dispatch for PodTable<'_> {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        let Event::Keypress(key) = event else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        if let Some(ref mut cmd) = self.cmd {
+            match cmd.dispatch(event)? {
+                Broadcast::Consumed => return Ok(Broadcast::Consumed),
+                Broadcast::Exited => {
+                    self.cmd = None;
+
+                    return Ok(Broadcast::Consumed);
+                }
+                Broadcast::Ignored => {}
+            }
+        }
+
+        if let Some(ref mut detail) = self.detail {
+            match detail.dispatch(event)? {
+                Broadcast::Consumed => return Ok(Broadcast::Consumed),
+                Broadcast::Exited => {
+                    self.detail = None;
+
+                    return Ok(Broadcast::Consumed);
+                }
+                Broadcast::Ignored => {}
+            }
+        }
+
+        match key {
+            Keypress::Escape => return Ok(Broadcast::Exited),
+            Keypress::Enter => {
+                self.detail = self
+                    .items()
+                    .get(self.table.selected().unwrap_or_default())
+                    .map(|pod| Detail::new(pod.clone()));
+            }
+            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
+            Keypress::Printable(x) => {
+                if x == "/" {
+                    self.cmd = Some(Command::new());
+                }
+            }
+            _ => {
+                return Ok(Broadcast::Ignored);
+            }
+        };
+
+        Ok(Broadcast::Consumed)
+    }
+}
+
+impl Screen for PodTable<'_> {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let [_, cmd_area] =
+            Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
+
+        if self.detail.is_some() {
+            self.detail(frame, area);
+        } else {
+            self.list(frame, area);
+        }
 
         if self.cmd.is_none() {
             return;
@@ -215,6 +276,9 @@ impl Command {
 impl Dispatch for Command {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         match event {
+            Event::Keypress(Keypress::Escape) => {
+                return Ok(Broadcast::Exited);
+            }
             Event::Keypress(Keypress::Printable(x)) => {
                 self.content.insert_str(self.pos as usize, x);
                 self.pos = self.pos.saturating_add(1);
@@ -257,5 +321,177 @@ impl Screen for Command {
         frame.render_widget(pg, area);
 
         frame.set_cursor(cmd_pos.x + self.pos, cmd_pos.y);
+    }
+}
+
+struct DetailStyle {
+    breadcrumb: Style,
+}
+
+impl Default for DetailStyle {
+    fn default() -> Self {
+        Self {
+            breadcrumb: Style::default().add_modifier(Modifier::BOLD),
+        }
+    }
+}
+
+struct Detail<'a> {
+    tabs: Tabs<'a>,
+    pod: Arc<Pod>,
+    position: (u16, u16),
+}
+
+impl Detail<'_> {
+    fn new(pod: Arc<Pod>) -> Self {
+        Self {
+            pod,
+            tabs: Tabs::new(
+                vec!["Overview", "Logs", "Shell"]
+                    .into_iter()
+                    .map(Text::raw)
+                    .collect(),
+            ),
+
+            position: (0, 0),
+        }
+    }
+
+    fn breadcrumb(&self) -> Vec<Span> {
+        let style = DetailStyle::default();
+
+        let mut crumb: Vec<Span> = Vec::new();
+
+        if let Some(ns) = self.pod.namespace() {
+            crumb.push(ns.into());
+            crumb.push(Span::from(" → ").style(style.breadcrumb));
+        }
+
+        crumb.push(self.pod.name_any().into());
+
+        crumb
+    }
+
+    fn scroll(&mut self, key: &Keypress) {
+        let (x, y) = self.position;
+
+        let next = match key {
+            Keypress::CursorUp => x.saturating_sub(1),
+            Keypress::CursorDown => x.saturating_add(1),
+            _ => return,
+        };
+
+        self.position = (next, y);
+    }
+}
+
+impl Dispatch for Detail<'_> {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        let Event::Keypress((key)) = event else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        match key {
+            Keypress::Escape => return Ok(Broadcast::Exited),
+            Keypress::CursorLeft => {
+                self.tabs.select(self.tabs.selected().saturating_sub(1));
+            }
+            Keypress::CursorRight => {
+                self.tabs.select(self.tabs.selected().saturating_add(1));
+            }
+            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
+            _ => return Ok(Broadcast::Ignored),
+        }
+
+        Ok(Broadcast::Consumed)
+    }
+}
+
+impl Screen for Detail<'_> {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(Line::from(self.breadcrumb()));
+
+        let inner = block.inner(area);
+
+        frame.render_widget(block, area);
+
+        let [tab_area, inner] =
+            Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).areas(inner);
+
+        frame.render_widget(&self.tabs, tab_area);
+
+        let ps = SyntaxSet::load_defaults_newlines();
+        let syntax = ps.find_syntax_by_extension("yaml").unwrap();
+
+        let mut highlighter = HighlightLines::new(syntax, &THEME);
+
+        let txt = self.pod.to_yaml().unwrap_or(String::new());
+
+        let yaml: Vec<Line> = LinesWithEndings::from(&txt)
+            .map(|line| {
+                highlighter
+                    .highlight_line(line, &ps)
+                    .unwrap()
+                    .into_iter()
+                    .filter_map(|segment| into_span(segment).ok())
+                    .collect()
+            })
+            .collect();
+
+        frame.render_widget(Paragraph::new(yaml).scroll(self.position), inner);
+    }
+}
+
+struct Tabs<'a> {
+    items: Vec<Text<'a>>,
+    current: usize,
+    selected_style: Style,
+}
+
+impl<'a> Tabs<'a> {
+    fn new(items: Vec<Text<'a>>) -> Self {
+        Self {
+            items,
+
+            current: 0,
+            selected_style: Style::default().add_modifier(Modifier::REVERSED),
+        }
+    }
+
+    fn select(&mut self, idx: usize) {
+        self.current = idx.clamp(0, self.items.len() - 1);
+    }
+
+    fn selected(&self) -> usize {
+        self.current
+    }
+}
+
+impl WidgetRef for Tabs<'_> {
+    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        let [tab_area, border] =
+            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(area);
+
+        let layout =
+            Layout::horizontal(std::iter::repeat(Constraint::Fill(1)).take(self.items.len()))
+                .spacing(1)
+                .split(tab_area);
+
+        for (i, (tab, area)) in self.items.iter().zip(layout.iter()).enumerate() {
+            let style = if i == self.selected() {
+                self.selected_style
+            } else {
+                Style::default()
+            };
+
+            Paragraph::new(tab.clone())
+                .style(style)
+                .alignment(Alignment::Center)
+                .render(*area, buf);
+        }
+
+        Block::default().borders(Borders::TOP).render(border, buf);
     }
 }

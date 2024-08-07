@@ -52,6 +52,8 @@ serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
 serde_path_to_error = "0.1.16"
 serde_yaml = "0.9.34"
+syntect = "5.2.0"
+syntect-tui = "3.0.3"
 tokio = { version = "1.38.1", features = ["full"] }
 tokio-util = { version = "0.7.11", features = ["io-util"] }
 tracing = "0.1.40"
