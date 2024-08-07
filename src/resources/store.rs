@@ -1,14 +1,14 @@
 use std::{future::ready, iter::Iterator, sync::Arc};
 
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use kube::{
-    runtime,
     runtime::{
+        self,
         reflector::{self},
         watcher::Config,
         WatchStreamExt,
     },
-    Api,
+    Api, ResourceExt,
 };
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
@@ -42,6 +42,11 @@ where
     pub fn new(client: kube::Client) -> Self {
         let (reader, writer) = reflector::store();
         let stream = runtime::watcher(Api::<K>::all(client), Config::default())
+            .map_ok(|ev| {
+                ev.modify(|obj| {
+                    ResourceExt::managed_fields_mut(obj).clear();
+                })
+            })
             .default_backoff()
             .reflect(writer)
             .applied_objects()
