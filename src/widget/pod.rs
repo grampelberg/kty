@@ -26,28 +26,16 @@ use syntect::{
 use syntect_tui::into_span;
 use tracing::info;
 
+use super::yaml;
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::{
         pod::{self, PodExt},
         store::Store,
-        Yaml,
+        Yaml as YamlResource,
     },
-    widget::{Dispatch, Screen, TableRow},
+    widget::{propagate, yaml::Yaml, Dispatch, Screen, TableRow},
 };
-
-static THEME: LazyLock<Theme> = LazyLock::new(|| {
-    let ts = ThemeSet::load_defaults();
-    let mut theme = ts.themes["base16-ocean.dark"].clone();
-    theme.settings.background = Some(syntect::highlighting::Color {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 0,
-    });
-
-    theme
-});
 
 struct RowStyle {
     healthy: Style,
@@ -150,7 +138,7 @@ impl PodTable<'_> {
         let state = self.items();
 
         if self.table.selected().unwrap_or_default() > state.len() {
-            self.table.select(Some(state.len() - 1));
+            self.table.select(Some(state.len().saturating_sub(1)));
         }
 
         let rows: Vec<Row> = state
@@ -184,29 +172,8 @@ impl Dispatch for PodTable<'_> {
             return Ok(Broadcast::Ignored);
         };
 
-        if let Some(ref mut cmd) = self.cmd {
-            match cmd.dispatch(event)? {
-                Broadcast::Consumed => return Ok(Broadcast::Consumed),
-                Broadcast::Exited => {
-                    self.cmd = None;
-
-                    return Ok(Broadcast::Consumed);
-                }
-                Broadcast::Ignored => {}
-            }
-        }
-
-        if let Some(ref mut detail) = self.detail {
-            match detail.dispatch(event)? {
-                Broadcast::Consumed => return Ok(Broadcast::Consumed),
-                Broadcast::Exited => {
-                    self.detail = None;
-
-                    return Ok(Broadcast::Consumed);
-                }
-                Broadcast::Ignored => {}
-            }
-        }
+        propagate!(self.cmd, event);
+        propagate!(self.detail, event);
 
         match key {
             Keypress::Escape => return Ok(Broadcast::Exited),
@@ -339,21 +306,22 @@ impl Default for DetailStyle {
 struct Detail<'a> {
     tabs: Tabs<'a>,
     pod: Arc<Pod>,
-    position: (u16, u16),
+
+    yaml: Option<Yaml<Pod>>,
 }
 
 impl Detail<'_> {
     fn new(pod: Arc<Pod>) -> Self {
         Self {
-            pod,
             tabs: Tabs::new(
                 vec!["Overview", "Logs", "Shell"]
                     .into_iter()
                     .map(Text::raw)
                     .collect(),
             ),
+            yaml: Some(Yaml::new(pod.clone())),
 
-            position: (0, 0),
+            pod,
         }
     }
 
@@ -371,18 +339,6 @@ impl Detail<'_> {
 
         crumb
     }
-
-    fn scroll(&mut self, key: &Keypress) {
-        let (x, y) = self.position;
-
-        let next = match key {
-            Keypress::CursorUp => x.saturating_sub(1),
-            Keypress::CursorDown => x.saturating_add(1),
-            _ => return,
-        };
-
-        self.position = (next, y);
-    }
 }
 
 impl Dispatch for Detail<'_> {
@@ -390,6 +346,8 @@ impl Dispatch for Detail<'_> {
         let Event::Keypress((key)) = event else {
             return Ok(Broadcast::Ignored);
         };
+
+        propagate!(self.yaml, event);
 
         match key {
             Keypress::Escape => return Ok(Broadcast::Exited),
@@ -399,7 +357,6 @@ impl Dispatch for Detail<'_> {
             Keypress::CursorRight => {
                 self.tabs.select(self.tabs.selected().saturating_add(1));
             }
-            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
             _ => return Ok(Broadcast::Ignored),
         }
 
@@ -422,25 +379,14 @@ impl Screen for Detail<'_> {
 
         frame.render_widget(&self.tabs, tab_area);
 
-        let ps = SyntaxSet::load_defaults_newlines();
-        let syntax = ps.find_syntax_by_extension("yaml").unwrap();
+        let [nested] = Layout::default()
+            .constraints([Constraint::Min(0)])
+            .horizontal_margin(2)
+            .areas(inner);
 
-        let mut highlighter = HighlightLines::new(syntax, &THEME);
-
-        let txt = self.pod.to_yaml().unwrap_or(String::new());
-
-        let yaml: Vec<Line> = LinesWithEndings::from(&txt)
-            .map(|line| {
-                highlighter
-                    .highlight_line(line, &ps)
-                    .unwrap()
-                    .into_iter()
-                    .filter_map(|segment| into_span(segment).ok())
-                    .collect()
-            })
-            .collect();
-
-        frame.render_widget(Paragraph::new(yaml).scroll(self.position), inner);
+        if let Some(yaml) = self.yaml.as_mut() {
+            yaml.draw(frame, nested);
+        }
     }
 }
 

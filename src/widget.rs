@@ -1,4 +1,5 @@
 pub mod pod;
+pub mod yaml;
 
 use eyre::Result;
 use ratatui::{
@@ -23,3 +24,22 @@ pub trait Dispatch {
 pub trait Screen {
     fn draw(&mut self, frame: &mut Frame, area: Rect);
 }
+
+#[macro_export]
+macro_rules! propagate {
+    ($dispatch:expr, $event:expr) => {
+        if let Some(obj) = $dispatch.as_mut() {
+            match obj.dispatch($event)? {
+                Broadcast::Consumed => return Ok(Broadcast::Consumed),
+                Broadcast::Exited => {
+                    $dispatch = None;
+
+                    return Ok(Broadcast::Consumed);
+                }
+                Broadcast::Ignored => {}
+            }
+        }
+    };
+}
+
+pub use propagate;
