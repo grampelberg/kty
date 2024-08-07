@@ -1,4 +1,6 @@
+pub mod log;
 pub mod pod;
+pub mod tabs;
 pub mod yaml;
 
 use eyre::Result;
@@ -24,6 +26,8 @@ pub trait Dispatch {
 pub trait Screen {
     fn draw(&mut self, frame: &mut Frame, area: Rect);
 }
+
+pub trait Widget: Dispatch + Screen + Send {}
 
 #[macro_export]
 macro_rules! propagate {
