@@ -191,11 +191,7 @@ impl Dispatch for PodTable {
                     .map(|pod| Detail::new(self.client.clone(), pod.clone()));
             }
             Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
-            Keypress::Printable(x) => {
-                if x == "/" {
-                    self.cmd = Some(Command::new());
-                }
-            }
+            Keypress::Printable('/') => self.cmd = Some(Command::new()),
             _ => {
                 return Ok(Broadcast::Ignored);
             }
@@ -254,7 +250,7 @@ impl Dispatch for Command {
                 return Ok(Broadcast::Exited);
             }
             Event::Keypress(Keypress::Printable(x)) => {
-                self.content.insert_str(self.pos as usize, x);
+                self.content.insert(self.pos as usize, *x);
                 self.pos = self.pos.saturating_add(1);
             }
             Event::Keypress(Keypress::Backspace) => 'outer: {

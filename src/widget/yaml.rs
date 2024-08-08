@@ -75,12 +75,7 @@ where
             #[allow(clippy::cast_possible_truncation)]
             length: LinesWithEndings::from(txt.as_str()).count() as u16,
             txt,
-            area: Rect {
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-            },
+            area: Rect::default(),
             position: (0, 0),
         }
     }
@@ -91,13 +86,7 @@ where
         let next = match key {
             Keypress::CursorUp => x.saturating_sub(1),
             Keypress::CursorDown => x.saturating_add(1),
-            Keypress::Printable(c) => {
-                if c == " " {
-                    x.saturating_add(self.area.height)
-                } else {
-                    return;
-                }
-            }
+            Keypress::Printable(' ') => x.saturating_add(self.area.height),
             _ => return,
         };
 
@@ -121,11 +110,7 @@ where
 
         match key {
             Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
-            Keypress::Printable(x) => {
-                if x == " " {
-                    self.scroll(key);
-                }
-            }
+            Keypress::Printable(' ') => self.scroll(key),
             _ => return Ok(Broadcast::Ignored),
         }
 

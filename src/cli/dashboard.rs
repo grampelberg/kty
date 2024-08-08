@@ -11,6 +11,7 @@ use tokio::{
     task::JoinSet,
     time::Duration,
 };
+use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -42,8 +43,12 @@ async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
                     continue;
                 };
 
+                info!("key: {:?}", key);
+
                 let key: Keypress = key.try_into()?;
                 sender.send(Event::Keypress(key.clone()))?;
+
+                info!("key: {:?}", key);
 
                 if matches!(key, Keypress::EndOfText) {
                     break;

@@ -30,6 +30,10 @@ impl TryInto<Event> for &[u8] {
 #[derive(Debug, Clone)]
 pub enum Keypress {
     Null,
+    Control(char),
+
+    // Most of these should map to ctrl+char but some of them are mapped to their own keys and I'm
+    // not confident that I can distinguish between those use cases.
     StartOfHeader,
     StartOfText,
     EndOfText,
@@ -62,7 +66,7 @@ pub enum Keypress {
     RS,
     US,
     Delete,
-    Printable(String),
+    Printable(char),
 
     // Escape Sequences
     CursorUp,
@@ -102,11 +106,13 @@ impl TryInto<Keypress> for &[u8] {
         match self[0] {
             b'\x00' => Ok(Keypress::Null),
             b'\x01' => Ok(Keypress::StartOfHeader),
-            b'\x02' => Ok(Keypress::StartOfText),
+            b'\x02' => Ok(Keypress::Control('b')),
+            // b'\x02' => Ok(Keypress::StartOfText),
             b'\x03' => Ok(Keypress::EndOfText),
             b'\x04' => Ok(Keypress::EndOfTransmission),
             b'\x05' => Ok(Keypress::Enquiry),
-            b'\x06' => Ok(Keypress::Acknowledge),
+            b'\x06' => Ok(Keypress::Control('f')),
+            // b'\x06' => Ok(Keypress::Acknowledge),
             b'\x07' => Ok(Keypress::Bell),
             b'\x08' => Ok(Keypress::Backspace),
             b'\x09' => Ok(Keypress::HorizontalTab),
@@ -133,7 +139,7 @@ impl TryInto<Keypress> for &[u8] {
             b'\x1F' => Ok(Keypress::US),
             b'\x7f' => Ok(Keypress::Delete),
             _ => Ok(Keypress::Printable(
-                str::from_utf8(self).unwrap().to_string(),
+                str::from_utf8(self).unwrap().chars().next().unwrap(),
             )),
         }
     }
@@ -205,7 +211,19 @@ impl TryInto<Keypress> for KeyEvent {
                 state: _,
             } => Ok(Keypress::Escape),
             KeyEvent {
-                code: KeyCode::Char(c),
+                code: KeyCode::Char('b'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Control('b')),
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: _,
+                state: _,
+            } => Ok(Keypress::Control('f')),
+            KeyEvent {
+                code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
                 kind: _,
                 state: _,
@@ -215,7 +233,7 @@ impl TryInto<Keypress> for KeyEvent {
                 modifiers: _,
                 kind: _,
                 state: _,
-            } => Ok(Keypress::Printable(c.to_string())),
+            } => Ok(Keypress::Printable(c)),
             _ => Err(eyre!("Unknown keypress")),
         }
     }
