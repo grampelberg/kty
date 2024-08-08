@@ -8,7 +8,7 @@ use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::info;
 
-use super::{Dispatch, Screen, Widget};
+use super::Widget;
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Log {
@@ -98,7 +98,7 @@ impl Log {
     }
 }
 
-impl Dispatch for Log {
+impl Widget for Log {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
@@ -114,9 +114,7 @@ impl Dispatch for Log {
 
         Ok(Broadcast::Consumed)
     }
-}
 
-impl Screen for Log {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         self.area = area;
 
@@ -145,8 +143,6 @@ impl Screen for Log {
         frame.render_widget(paragraph, area);
     }
 }
-
-impl Widget for Log {}
 
 impl Drop for Log {
     fn drop(&mut self) {

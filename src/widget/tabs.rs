@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
 };
 
-use super::{Dispatch, Screen, Widget};
+use super::Widget;
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Tab {
@@ -65,9 +65,7 @@ impl TabbedView {
     }
 }
 
-impl Widget for TabbedView {}
-
-impl Dispatch for TabbedView {
+impl Widget for TabbedView {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         if matches!(self.current.dispatch(event)?, Broadcast::Consumed) {
             return Ok(Broadcast::Consumed);
@@ -84,9 +82,7 @@ impl Dispatch for TabbedView {
 
         Ok(Broadcast::Consumed)
     }
-}
 
-impl Screen for TabbedView {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let [tab_area, border, body_area] = Layout::vertical([
             Constraint::Length(1),

@@ -13,7 +13,7 @@ use syntect::{
 use syntect_tui::into_span;
 use tracing::info;
 
-use super::{Dispatch, Screen, Widget};
+use super::Widget;
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::Yaml as YamlResource,
@@ -52,9 +52,12 @@ fn to_lines(txt: &str) -> Vec<Line> {
         .collect()
 }
 
+// TODO:
+// - Need to cache the lines.
+// - See logs for performance improvements (eg. only render visible lines).
 pub struct Yaml<K>
 where
-    K: Resource + Serialize + Send,
+    K: Resource + Serialize + Send + Sync,
 {
     resource: Arc<K>,
     txt: String,
@@ -65,7 +68,7 @@ where
 
 impl<K> Yaml<K>
 where
-    K: Resource + Serialize + Send,
+    K: Resource + Serialize + Send + Sync,
 {
     pub fn new(resource: Arc<K>) -> Self {
         let txt = resource.to_yaml().unwrap();
@@ -86,22 +89,19 @@ where
         let next = match key {
             Keypress::CursorUp => x.saturating_sub(1),
             Keypress::CursorDown => x.saturating_add(1),
-            Keypress::Printable(' ') => x.saturating_add(self.area.height),
+            Keypress::Control('b') => x.saturating_sub(self.area.height),
+            Keypress::Control('f') | Keypress::Printable(' ') => x.saturating_add(self.area.height),
             _ => return,
-        };
+        }
+        .clamp(0, self.length.saturating_sub(self.area.height + 2));
 
-        self.position = (
-            next.clamp(0, self.length.saturating_sub(self.area.height + 2)),
-            y,
-        );
+        self.position = (next, y);
     }
 }
 
-impl<K> Widget for Yaml<K> where K: Resource + Serialize + Send + Sync {}
-
-impl<K> Dispatch for Yaml<K>
+impl<K> Widget for Yaml<K>
 where
-    K: Resource + Serialize + Send,
+    K: Resource + Serialize + Send + Sync,
 {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress((key)) = event else {
@@ -109,19 +109,16 @@ where
         };
 
         match key {
-            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
-            Keypress::Printable(' ') => self.scroll(key),
+            Keypress::CursorUp
+            | Keypress::CursorDown
+            | Keypress::Printable(' ')
+            | Keypress::Control('b' | 'f') => self.scroll(key),
             _ => return Ok(Broadcast::Ignored),
         }
 
         Ok(Broadcast::Consumed)
     }
-}
 
-impl<K> Screen for Yaml<K>
-where
-    K: Resource + Serialize + Send,
-{
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         self.area = area;
 

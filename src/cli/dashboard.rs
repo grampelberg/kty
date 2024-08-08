@@ -15,7 +15,7 @@ use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
-    widget::{pod::PodTable, Dispatch, Screen},
+    widget::{pod::PodTable, Widget},
 };
 
 #[derive(Parser, Container)]
@@ -92,7 +92,7 @@ where
         term.draw(|frame| {
             let size = frame.size();
 
-            Screen::draw(&mut root, frame, size);
+            Widget::draw(&mut root, frame, size);
         })?;
     }
 

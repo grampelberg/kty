@@ -1,3 +1,5 @@
+pub mod shell;
+
 use std::{
     borrow::{Borrow, BorrowMut},
     sync::{Arc, LazyLock},
@@ -39,7 +41,7 @@ use crate::{
         store::Store,
         Yaml as YamlResource,
     },
-    widget::{propagate, yaml::Yaml, Dispatch, Screen, TableRow},
+    widget::{propagate, yaml::Yaml, TableRow},
 };
 
 struct RowStyle {
@@ -173,7 +175,7 @@ impl PodTable {
     }
 }
 
-impl Dispatch for PodTable {
+impl Widget for PodTable {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
@@ -199,9 +201,7 @@ impl Dispatch for PodTable {
 
         Ok(Broadcast::Consumed)
     }
-}
 
-impl Screen for PodTable {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let [_, cmd_area] =
             Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
@@ -243,7 +243,7 @@ impl Command {
     }
 }
 
-impl Dispatch for Command {
+impl Widget for Command {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         match event {
             Event::Keypress(Keypress::Escape) => {
@@ -278,9 +278,7 @@ impl Dispatch for Command {
 
         Ok(Broadcast::Consumed)
     }
-}
 
-impl Screen for Command {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let block = Block::default().title("Command").borders(Borders::ALL);
 
@@ -349,7 +347,7 @@ impl Detail {
     }
 }
 
-impl Dispatch for Detail {
+impl Widget for Detail {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         if matches!(self.view.dispatch(event)?, Broadcast::Consumed) {
             return Ok(Broadcast::Consumed);
@@ -365,9 +363,7 @@ impl Dispatch for Detail {
 
         Ok(Broadcast::Ignored)
     }
-}
 
-impl Screen for Detail {
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
