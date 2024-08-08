@@ -19,15 +19,11 @@ pub trait TableRow<'a> {
     fn header() -> Row<'a>;
 }
 
-pub trait Dispatch {
+pub trait Widget: Send {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
-}
 
-pub trait Screen {
     fn draw(&mut self, frame: &mut Frame, area: Rect);
 }
-
-pub trait Widget: Dispatch + Screen + Send {}
 
 #[macro_export]
 macro_rules! propagate {
