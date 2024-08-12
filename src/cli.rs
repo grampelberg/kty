@@ -1,4 +1,4 @@
-mod dashboard;
+mod dev;
 mod resources;
 mod serve;
 mod users;
@@ -34,7 +34,7 @@ pub struct Root {
 
 #[derive(Subcommand, Container)]
 enum RootCmd {
-    Dashboard(dashboard::Dashboard),
+    Dev(dev::Dev),
     Resources(resources::Resources),
     Serve(serve::Serve),
     Users(users::Users),
