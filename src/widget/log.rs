@@ -8,7 +8,7 @@ use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::info;
 
-use super::Widget;
+use super::{tabs::Tab, Widget};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Log {
@@ -66,6 +66,15 @@ impl Log {
             position: 0,
             area: Rect::default(),
         }
+    }
+
+    // TODO: This should be a macro. Ideally, it'd be a trait with a default impl
+    // but I don't think it is possible to do generically.
+    pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
+        Tab::new(
+            name,
+            Box::new(move || Box::new(Log::new(client.clone(), pod.clone()))),
+        )
     }
 
     fn update(&mut self) {

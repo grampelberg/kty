@@ -17,6 +17,7 @@ use super::Widget;
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::Yaml as YamlResource,
+    widget::tabs::Tab,
 };
 
 static THEME: LazyLock<Theme> = LazyLock::new(|| {
@@ -68,7 +69,7 @@ where
 
 impl<K> Yaml<K>
 where
-    K: Resource + Serialize + Send + Sync,
+    K: Resource + Serialize + Send + Sync + 'static,
 {
     pub fn new(resource: Arc<K>) -> Self {
         let txt = resource.to_yaml().unwrap();
@@ -81,6 +82,13 @@ where
             area: Rect::default(),
             position: (0, 0),
         }
+    }
+
+    pub fn tab(name: String, resource: Arc<K>) -> Tab {
+        Tab::new(
+            name,
+            Box::new(move || Box::new(Self::new(resource.clone()))),
+        )
     }
 
     fn scroll(&mut self, key: &Keypress) {
@@ -101,7 +109,7 @@ where
 
 impl<K> Widget for Yaml<K>
 where
-    K: Resource + Serialize + Send + Sync,
+    K: Resource + Serialize + Send + Sync + 'static,
 {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress((key)) = event else {

@@ -41,7 +41,7 @@ use crate::{
         store::Store,
         Yaml as YamlResource,
     },
-    widget::{propagate, yaml::Yaml, TableRow},
+    widget::{pod::shell::Shell, propagate, yaml::Yaml, TableRow},
 };
 
 struct RowStyle {
@@ -313,20 +313,12 @@ struct Detail {
 
 impl Detail {
     fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
-        let _pod = pod.clone();
-        let yaml = Tab::new(
-            "Overview".to_string(),
-            Box::new(move || Box::new(Yaml::new(_pod.clone()))),
-        );
-
-        let _pod = pod.clone();
-        let _client = client.clone();
-        let logs = Tab::new(
-            "Logs".to_string(),
-            Box::new(move || Box::new(Log::new(_client.clone(), _pod.clone()))),
-        );
-
-        let view = TabbedView::new(vec![yaml, logs]).unwrap();
+        let view = TabbedView::new(vec![
+            Yaml::tab("Overview".to_string(), pod.clone()),
+            Log::tab("Logs".to_string(), client.clone(), pod.clone()),
+            Shell::tab("Shell".to_string(), client.clone(), pod.clone()),
+        ])
+        .unwrap();
 
         Self { client, pod, view }
     }
