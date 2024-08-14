@@ -11,7 +11,6 @@ use syntect::{
     util::LinesWithEndings,
 };
 use syntect_tui::into_span;
-use tracing::info;
 
 use super::Widget;
 use crate::{
@@ -112,7 +111,7 @@ where
     K: Resource + Serialize + Send + Sync + 'static,
 {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        let Event::Keypress((key)) = event else {
+        let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
         };
 

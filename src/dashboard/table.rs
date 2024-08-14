@@ -1,9 +1,5 @@
-use std::{
-    borrow::Borrow,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use eyre::Result;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{Api, ListParams, ObjectList},
@@ -14,7 +10,6 @@ use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     text::Text,
     widgets::{self, Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Widget, WidgetRef},
-    Frame,
 };
 use tokio::task::JoinHandle;
 

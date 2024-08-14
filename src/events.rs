@@ -14,6 +14,7 @@ pub enum Broadcast {
 pub enum Event {
     Keypress(Keypress),
     Resize(WindowSize),
+    Goto(Vec<String>),
     Shutdown,
     Render,
 }

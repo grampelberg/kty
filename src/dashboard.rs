@@ -2,16 +2,12 @@ mod table;
 
 use std::sync::Arc;
 
-use eyre::{eyre, Result};
+use eyre::Result;
 use ratatui::{
-    backend::{self, CrosstermBackend},
-    layout::Rect,
-    terminal::TerminalOptions,
-    widgets::{Block, Borders, Clear, Paragraph, WidgetRef},
-    Frame, Terminal, Viewport,
+    widgets::{Clear, WidgetRef},
+    Terminal,
 };
 use tokio::sync::mpsc;
-use tracing::{debug, info, trace};
 
 use crate::{
     events::{Event, Keypress},

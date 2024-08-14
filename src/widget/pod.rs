@@ -1,294 +1,92 @@
 pub mod shell;
 
-use std::{
-    borrow::{Borrow, BorrowMut},
-    sync::{Arc, LazyLock},
-};
+use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{eyre, Result};
 use k8s_openapi::api::core::v1::Pod;
 use kube::ResourceExt;
 use ratatui::{
-    buffer::Buffer,
     layout::Rect,
     prelude::*,
-    style::{palette::tailwind, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
-    widgets::{
-        self, block::Title, Block, Borders, Clear, Paragraph, Row, StatefulWidget,
-        StatefulWidgetRef, Table, TableState, Widget as _, WidgetRef,
-    },
+    widgets::{Block, Borders, Paragraph},
 };
-use syntect::{
-    easy::HighlightLines,
-    highlighting::{Theme, ThemeSet},
-    parsing::SyntaxSet,
-    util::{as_24_bit_terminal_escaped, LinesWithEndings},
-};
-use syntect_tui::into_span;
-use tokio_util::time::delay_queue::Key;
-use tracing::info;
 
 use super::{
+    loading::Loading,
     log::Log,
-    tabs::{Tab, TabbedView},
-    yaml, Widget,
+    table::{DetailFn, Table},
+    tabs::TabbedView,
+    Widget,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
-    resources::{
-        pod::{self, PodExt},
-        store::Store,
-        Yaml as YamlResource,
-    },
-    widget::{pod::shell::Shell, propagate, yaml::Yaml, TableRow},
+    resources::store::Store,
+    widget::{pod::shell::Shell, yaml::Yaml},
 };
 
-struct RowStyle {
-    healthy: Style,
-    unhealthy: Style,
-    normal: Style,
+pub struct List {
+    pods: Arc<Store<Pod>>,
+    table: Table,
+
+    route: Vec<String>,
 }
 
-impl Default for RowStyle {
-    fn default() -> Self {
-        Self {
-            healthy: Style::default().fg(tailwind::GREEN.c300),
-            unhealthy: Style::default().fg(tailwind::RED.c300),
-            normal: Style::default().fg(tailwind::INDIGO.c300),
-        }
-    }
-}
-
-struct TableStyle {
-    border: Style,
-    header: Style,
-    selected: Style,
-    row: RowStyle,
-}
-
-impl Default for TableStyle {
-    fn default() -> Self {
-        Self {
-            border: Style::default(),
-            header: Style::default().bold(),
-            selected: Style::default().add_modifier(Modifier::REVERSED),
-            row: RowStyle::default(),
-        }
-    }
-}
-
-// - Handle items being removed/added
-// - Render scrollbar only if there's something that needs to be scrolled.
-pub struct PodTable {
-    client: kube::Client,
-    pods: Store<Pod>,
-    table: TableState,
-    cmd: Option<Command>,
-    detail: Option<Detail>,
-}
-
-impl PodTable {
+impl List {
     pub fn new(client: kube::Client) -> Self {
+        let pods = Arc::new(Store::new(client.clone()));
+
         Self {
-            client: client.clone(),
-            pods: Store::new(client),
-            table: TableState::default().with_selected(0),
+            pods: pods.clone(),
+            table: Table::new("Pods".to_string(), Detail::from_store(client, pods.clone())),
 
-            cmd: None,
-            detail: None,
+            route: Vec::new(),
         }
-    }
-
-    fn items(&self) -> Vec<Arc<Pod>> {
-        let filter = self.cmd.as_ref().map(Command::content);
-
-        if filter.is_none() {
-            return self.pods.state();
-        }
-
-        self.pods
-            .state()
-            .into_iter()
-            .filter(|pod| {
-                let filter = filter.unwrap();
-
-                if filter.is_empty() {
-                    return true;
-                }
-
-                pod.matches(filter)
-            })
-            .collect()
-    }
-
-    fn scroll(&mut self, key: &Keypress) {
-        let current = self.table.selected().unwrap_or_default();
-
-        let next = match key {
-            Keypress::CursorUp => current.saturating_sub(1),
-            Keypress::CursorDown => current.saturating_add(1),
-            _ => return,
-        };
-
-        let max = self.items().len().saturating_sub(1);
-
-        self.table.select(Some(next.clamp(0, max)));
-    }
-
-    fn list(&mut self, frame: &mut Frame, area: Rect) {
-        let style = TableStyle::default();
-
-        let border = Block::default()
-            .title("Pods")
-            .borders(Borders::ALL)
-            .style(style.border);
-
-        let state = self.items();
-
-        if self.table.selected().unwrap_or_default() > state.len() {
-            self.table.select(Some(state.len().saturating_sub(1)));
-        }
-
-        let rows: Vec<Row> = state
-            .iter()
-            .map(|pod| {
-                let row = pod.row();
-
-                match pod.status() {
-                    pod::Phase::Pending | pod::Phase::Running => row.style(style.row.normal),
-                    pod::Phase::Succeeded => row.style(style.row.healthy),
-                    pod::Phase::Unknown(_) => row.style(style.row.unhealthy),
-                }
-            })
-            .collect();
-
-        let table = Table::new(rows, Pod::constraints())
-            .header(Pod::header().style(style.header))
-            .block(border)
-            .highlight_style(style.selected);
-        frame.render_stateful_widget(&table, area, &mut self.table);
-    }
-
-    fn detail(&mut self, frame: &mut Frame, area: Rect) {
-        self.detail.as_mut().unwrap().draw(frame, area);
     }
 }
 
-impl Widget for PodTable {
+impl Widget for List {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        let Event::Keypress(key) = event else {
-            return Ok(Broadcast::Ignored);
-        };
+        if let Event::Goto(route) = event {
+            self.route.clone_from(route);
 
-        propagate!(self.cmd, event);
-        propagate!(self.detail, event);
+            return Ok(Broadcast::Consumed);
+        }
 
-        match key {
-            Keypress::Escape => return Ok(Broadcast::Exited),
-            Keypress::Enter => {
-                self.detail = self
-                    .items()
-                    .get(self.table.selected().unwrap_or_default())
-                    .map(|pod| Detail::new(self.client.clone(), pod.clone()));
-            }
-            Keypress::CursorUp | Keypress::CursorDown => self.scroll(key),
-            Keypress::Printable('/') => self.cmd = Some(Command::new()),
-            _ => {
-                return Ok(Broadcast::Ignored);
-            }
-        };
+        if matches!(self.table.dispatch(event)?, Broadcast::Consumed) {
+            return Ok(Broadcast::Consumed);
+        }
 
-        Ok(Broadcast::Consumed)
+        match event {
+            Event::Keypress(Keypress::Escape) => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
+        }
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let [_, cmd_area] =
-            Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
+        if self.pods.loading() {
+            frame.render_widget(&Loading, area);
 
-        if self.detail.is_some() {
-            self.detail(frame, area);
-        } else {
-            self.list(frame, area);
-        }
-
-        if self.cmd.is_none() {
             return;
         }
 
-        // Command ends up being written *over the table (which writes to the whole
-        // screen). The clear makes sure that table items don't show up weirdly behind a
-        // transparent command buffer.
-        frame.render_widget(Clear, cmd_area);
+        if !self.route.is_empty() {
+            let route = self.route.clone();
 
-        self.cmd.as_mut().unwrap().draw(frame, cmd_area);
-    }
-}
+            if let Err(e) = self.table.dispatch(&Event::Goto(route)) {
+                frame.render_widget(
+                    Paragraph::new(e.to_string()).block(Block::default().borders(Borders::ALL)),
+                    area,
+                );
 
-struct Command {
-    content: String,
-    pos: u16,
-}
+                return;
+            }
 
-impl Command {
-    fn new() -> Self {
-        Self {
-            content: String::new(),
-            pos: 0,
+            self.route.clear();
         }
-    }
 
-    fn content(&self) -> &str {
-        self.content.as_str()
-    }
-}
-
-impl Widget for Command {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        match event {
-            Event::Keypress(Keypress::Escape) => {
-                return Ok(Broadcast::Exited);
-            }
-            Event::Keypress(Keypress::Printable(x)) => {
-                self.content.insert(self.pos as usize, *x);
-                self.pos = self.pos.saturating_add(1);
-            }
-            Event::Keypress(Keypress::Backspace) => 'outer: {
-                if self.content.is_empty() || self.pos == 0 {
-                    break 'outer;
-                }
-
-                self.content.remove(self.pos as usize - 1);
-                self.pos = self.pos.saturating_sub(1);
-            }
-            Event::Keypress(Keypress::CursorLeft) => {
-                self.pos = self.pos.saturating_sub(1);
-            }
-            #[allow(clippy::cast_possible_truncation)]
-            Event::Keypress(Keypress::CursorRight) => {
-                self.pos = self
-                    .pos
-                    .saturating_add(1)
-                    .clamp(0, self.content.len() as u16);
-            }
-            _ => {
-                return Ok(Broadcast::Ignored);
-            }
-        };
-
-        Ok(Broadcast::Consumed)
-    }
-
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let block = Block::default().title("Command").borders(Borders::ALL);
-
-        let cmd_pos = block.inner(area);
-
-        let pg = Paragraph::new(self.content()).block(block);
-
-        frame.render_widget(pg, area);
-
-        frame.set_cursor(cmd_pos.x + self.pos, cmd_pos.y);
+        self.table.render(frame, area, &self.pods);
     }
 }
 
@@ -305,14 +103,13 @@ impl Default for DetailStyle {
 }
 
 struct Detail {
-    client: kube::Client,
     pod: Arc<Pod>,
 
     view: TabbedView,
 }
 
 impl Detail {
-    fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
+    fn new(client: &kube::Client, pod: Arc<Pod>) -> Self {
         let view = TabbedView::new(vec![
             Yaml::tab("Overview".to_string(), pod.clone()),
             Log::tab("Logs".to_string(), client.clone(), pod.clone()),
@@ -320,7 +117,17 @@ impl Detail {
         ])
         .unwrap();
 
-        Self { client, pod, view }
+        Self { pod, view }
+    }
+
+    pub fn from_store(client: kube::Client, pods: Arc<Store<Pod>>) -> DetailFn {
+        Box::new(move |idx, filter| {
+            let pod = pods
+                .get(idx, filter)
+                .ok_or_else(|| eyre!("pod not found"))?;
+
+            Ok(Box::new(Detail::new(&client, pod.clone())))
+        })
     }
 
     fn breadcrumb(&self) -> Vec<Span> {
@@ -345,7 +152,7 @@ impl Widget for Detail {
             return Ok(Broadcast::Consumed);
         }
 
-        let Event::Keypress((key)) = event else {
+        let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
         };
 
