@@ -1,10 +1,11 @@
 use std::{future::ready, iter::Iterator, sync::Arc};
 
-use futures::{FutureExt, StreamExt, TryStreamExt};
+use eyre::Result;
+use futures::StreamExt;
 use kube::{
     runtime::{
         self,
-        reflector::{self},
+        reflector::{self, store::WriterDropped},
         watcher::Config,
         WatchStreamExt,
     },
@@ -12,6 +13,22 @@ use kube::{
 };
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
+
+use super::Filter;
+use crate::widget::{table, TableRow};
+
+async fn is_ready<K>(reader: reflector::Store<K>) -> Result<(), WriterDropped>
+where
+    K: kube::Resource<DynamicType = ()>
+        + Clone
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + DeserializeOwned
+        + 'static,
+{
+    reader.wait_until_ready().await
+}
 
 pub struct Store<K>
 where
@@ -23,13 +40,15 @@ where
         + DeserializeOwned
         + 'static,
 {
-    task: JoinHandle<()>,
+    is_ready: JoinHandle<Result<(), WriterDropped>>,
+    watcher: JoinHandle<()>,
     reader: reflector::Store<K>,
 }
 
 impl<K> Store<K>
 where
-    K: kube::Resource<DynamicType = ()>
+    K: Filter
+        + kube::Resource<DynamicType = ()>
         + Clone
         + std::fmt::Debug
         + Send
@@ -42,33 +61,45 @@ where
     pub fn new(client: kube::Client) -> Self {
         let (reader, writer) = reflector::store();
         let stream = runtime::watcher(Api::<K>::all(client), Config::default())
-            .map_ok(|ev| {
-                ev.modify(|obj| {
-                    ResourceExt::managed_fields_mut(obj).clear();
-                })
-            })
             .default_backoff()
+            .modify(|obj| {
+                ResourceExt::managed_fields_mut(obj).clear();
+            })
             .reflect(writer)
             .applied_objects()
             .boxed();
 
-        let task = tokio::spawn(async move {
+        let watcher = tokio::spawn(async move {
             stream.for_each(|_| ready(())).await;
         });
 
-        Self { task, reader }
+        let is_ready = tokio::spawn(is_ready(reader.clone()));
+
+        Self {
+            is_ready,
+            watcher,
+            reader,
+        }
     }
 
     pub fn state(&self) -> Vec<Arc<K>> {
         self.reader.state()
     }
 
-    // TODO: the naive implementation of this (loading is false on first element of
-    // the stream), happens *fast*. It feels like there should be *something* that
-    // comes back when the initial sync has fully completed but I can't find
-    // anything in kube-rs yet that does that.
+    pub fn get(&self, idx: usize, filter: Option<&str>) -> Option<Arc<K>> {
+        filter
+            .map(|filter| {
+                self.reader
+                    .state()
+                    .into_iter()
+                    .filter(|obj| obj.matches(filter))
+                    .nth(idx)
+            })
+            .unwrap_or(self.reader.state().get(idx).cloned())
+    }
+
     pub fn loading(&self) -> bool {
-        false
+        !self.is_ready.is_finished()
     }
 }
 
@@ -83,6 +114,32 @@ where
         + 'static,
 {
     fn drop(&mut self) {
-        self.task.abort();
+        self.watcher.abort();
+        self.is_ready.abort();
+    }
+}
+
+impl<'a, K> table::Content<'a, Arc<K>> for Arc<Store<K>>
+where
+    K: Filter
+        + kube::Resource<DynamicType = ()>
+        + Clone
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + DeserializeOwned
+        + 'static,
+    Arc<K>: TableRow<'a>,
+{
+    fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>> {
+        filter
+            .map(|filter| {
+                self.reader
+                    .state()
+                    .into_iter()
+                    .filter(|obj| obj.matches(filter))
+                    .collect()
+            })
+            .unwrap_or(self.reader.state())
     }
 }

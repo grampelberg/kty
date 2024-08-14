@@ -1,7 +1,6 @@
-use std::borrow::Borrow;
+use std::{borrow::Borrow, sync::Arc};
 
-use chrono::{format::strftime, TimeDelta, Utc};
-use humantime::format_duration;
+use chrono::{TimeDelta, Utc};
 use k8s_openapi::api::core::v1::{
     ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
 };
@@ -11,7 +10,8 @@ use ratatui::{
     widgets::{Cell, Row},
 };
 
-use crate::widget::TableRow;
+use super::Filter;
+use crate::widget::{table::RowStyle, TableRow};
 
 pub enum Phase {
     Pending,
@@ -50,8 +50,6 @@ pub trait PodExt {
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
-
-    fn matches(&self, filter: &str) -> bool;
 }
 
 impl PodExt for Pod {
@@ -165,13 +163,9 @@ impl PodExt for Pod {
 
         Some(statuses.join(", ")).borrow().into()
     }
-
-    fn matches(&self, filter: &str) -> bool {
-        self.name_any().contains(filter)
-    }
 }
 
-impl<'a> TableRow<'a> for Pod {
+impl<'a> TableRow<'a> for Arc<Pod> {
     fn header() -> Row<'a> {
         Row::new(vec![
             Cell::from("Namespace"),
@@ -194,7 +188,7 @@ impl<'a> TableRow<'a> for Pod {
         ]
     }
 
-    fn row(&self) -> Row {
+    fn row(&self, style: &RowStyle) -> Row {
         Row::new(vec![
             Cell::from(self.namespace().unwrap()),
             Cell::from(self.name_any()),
@@ -203,6 +197,17 @@ impl<'a> TableRow<'a> for Pod {
             Cell::from(self.restarts()),
             Cell::from(self.age().to_age()),
         ])
+        .style(match self.status() {
+            Phase::Pending | Phase::Running => style.normal,
+            Phase::Succeeded => style.healthy,
+            Phase::Unknown(_) => style.unhealthy,
+        })
+    }
+}
+
+impl Filter for Pod {
+    fn matches(&self, filter: &str) -> bool {
+        self.name_any().contains(filter)
     }
 }
 

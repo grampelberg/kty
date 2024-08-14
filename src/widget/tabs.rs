@@ -1,14 +1,9 @@
 use eyre::{eyre, Result};
 use ratatui::{
-    buffer::Buffer,
     layout::Rect,
     prelude::*,
-    style::{palette::tailwind, Modifier, Style},
-    text::Line,
-    widgets::{
-        self, block::Title, Block, Borders, Clear, Paragraph, Row, StatefulWidget,
-        StatefulWidgetRef, Table, TableState, Widget as _, WidgetRef,
-    },
+    style::{Modifier, Style},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -53,20 +48,22 @@ impl TabbedView {
         })
     }
 
-    pub fn scroll(&mut self, key: &Keypress) {
-        self.idx = match key {
-            Keypress::CursorLeft => self.idx.saturating_sub(1),
-            Keypress::CursorRight => self.idx.saturating_add(1),
-            _ => return,
-        }
-        .clamp(0, self.items.len().saturating_sub(1));
-
+    pub fn scroll(&mut self, idx: usize) {
+        self.idx = idx.clamp(0, self.items.len().saturating_sub(1));
         self.current = self.items[self.idx].widget();
     }
 }
 
 impl Widget for TabbedView {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        if let Event::Goto(route) = event {
+            if !route.is_empty() {
+                self.scroll(route[0].parse::<usize>()?);
+            }
+
+            return Ok(Broadcast::Consumed);
+        }
+
         if matches!(self.current.dispatch(event)?, Broadcast::Consumed) {
             return Ok(Broadcast::Consumed);
         }
@@ -76,7 +73,8 @@ impl Widget for TabbedView {
         };
 
         match key {
-            Keypress::CursorLeft | Keypress::CursorRight => self.scroll(key),
+            Keypress::CursorLeft => self.scroll(self.idx.saturating_sub(1)),
+            Keypress::CursorRight => self.scroll(self.idx.saturating_add(1)),
             _ => return Ok(Broadcast::Ignored),
         }
 

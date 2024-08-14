@@ -5,7 +5,7 @@ use clap::Parser;
 use crossterm::event::EventStream;
 use eyre::Result;
 use futures::{FutureExt, StreamExt};
-use ratatui::{backend::CrosstermBackend, prelude::*, widgets::Clear, Terminal};
+use ratatui::{backend::CrosstermBackend, widgets::Clear, Terminal};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     task::JoinSet,
@@ -15,7 +15,10 @@ use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
-    widget::{pod::PodTable, Widget},
+    widget::{
+        pod::{self},
+        Widget,
+    },
 };
 
 #[derive(Parser, Container)]
@@ -25,6 +28,9 @@ pub struct Dashboard {
 
     #[arg(long, default_value = "1s")]
     poll: humantime::Duration,
+
+    #[arg(long)]
+    route: Vec<String>,
 }
 
 async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
@@ -60,7 +66,7 @@ async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
     Ok(())
 }
 
-async fn ui<W>(mut rx: UnboundedReceiver<Event>, tx: W) -> Result<()>
+async fn ui<W>(route: Vec<String>, mut rx: UnboundedReceiver<Event>, tx: W) -> Result<()>
 where
     W: std::io::Write + Send + 'static,
 {
@@ -70,7 +76,8 @@ where
         frame.render_widget(Clear, frame.size());
     })?;
 
-    let mut root = PodTable::new(kube::Client::try_default().await?);
+    let mut root = pod::List::new(kube::Client::try_default().await?);
+    root.dispatch(&Event::Goto(route.clone()))?;
 
     while let Some(ev) = rx.recv().await {
         match ev.clone() {
@@ -90,9 +97,9 @@ where
         }
 
         term.draw(|frame| {
-            let size = frame.size();
+            let area = frame.size();
 
-            Widget::draw(&mut root, frame, size);
+            Widget::draw(&mut root, frame, area);
         })?;
     }
 
@@ -110,7 +117,7 @@ impl Command for Dashboard {
         let mut background = JoinSet::new();
 
         background.spawn(events(self.ticks.into(), sender.clone()));
-        background.spawn(ui(receiver, std::io::stdout()));
+        background.spawn(ui(self.route.clone(), receiver, std::io::stdout()));
 
         // Exit when *anything* ends (on error or otherwise).
         while let Some(res) = background.join_next().await {

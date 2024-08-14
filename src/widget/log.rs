@@ -1,12 +1,11 @@
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::Arc;
 
 use eyre::Result;
 use futures::{AsyncBufReadExt, TryStreamExt};
 use k8s_openapi::api::core::v1::Pod;
-use kube::{api::LogParams, Api, Resource, ResourceExt};
+use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::info;
 
 use super::{tabs::Tab, Widget};
 use crate::events::{Broadcast, Event, Keypress};

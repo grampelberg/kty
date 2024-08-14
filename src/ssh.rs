@@ -8,7 +8,6 @@ use k8s_openapi::api::core::v1::ObjectReference;
 use kube::runtime::events::{Event, Recorder, Reporter};
 use russh::server::{Config, Handler, Server};
 use session::Session;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::error;
 
 use crate::{identity::user::User, openid};

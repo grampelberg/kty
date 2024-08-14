@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use eyre::Result;
-use futures::io::Window;
 use ratatui::{
     backend::{Backend as BackendTrait, ClearType, CrosstermBackend, WindowSize},
     buffer::Cell,

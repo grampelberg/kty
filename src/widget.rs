@@ -1,5 +1,8 @@
+pub mod filter;
+pub mod loading;
 pub mod log;
 pub mod pod;
+pub mod table;
 pub mod tabs;
 pub mod yaml;
 
@@ -10,12 +13,15 @@ use ratatui::{
     Frame,
 };
 
-use crate::events::{Broadcast, Event};
+use crate::{
+    events::{Broadcast, Event},
+    widget::table::RowStyle,
+};
 
 pub trait TableRow<'a> {
     fn constraints() -> Vec<Constraint>;
 
-    fn row(&self) -> Row;
+    fn row(&self, style: &RowStyle) -> Row;
     fn header() -> Row<'a>;
 }
 
@@ -27,17 +33,15 @@ pub trait Widget: Send {
 
 #[macro_export]
 macro_rules! propagate {
-    ($dispatch:expr, $event:expr) => {
-        if let Some(obj) = $dispatch.as_mut() {
-            match obj.dispatch($event)? {
-                Broadcast::Consumed => return Ok(Broadcast::Consumed),
-                Broadcast::Exited => {
-                    $dispatch = None;
+    ($fn:expr, $exit:expr) => {
+        match $fn? {
+            Broadcast::Consumed => return Ok(Broadcast::Consumed),
+            Broadcast::Exited => {
+                $exit;
 
-                    return Ok(Broadcast::Consumed);
-                }
-                Broadcast::Ignored => {}
+                return Ok(Broadcast::Consumed);
             }
+            Broadcast::Ignored => {}
         }
     };
 }

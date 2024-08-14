@@ -195,3 +195,7 @@ where
         serde_yaml::to_string(&self).map_err(Into::into)
     }
 }
+
+pub trait Filter {
+    fn matches(&self, filter: &str) -> bool;
+}
