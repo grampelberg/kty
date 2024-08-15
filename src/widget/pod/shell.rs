@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use eyre::{eyre, Result};
+use futures::channel::mpsc::UnboundedReceiver;
 use k8s_openapi::api::core::v1::Pod;
 use ratatui::{
     layout::Rect,
@@ -9,6 +10,8 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders, Paragraph},
 };
+use tokio::io::AsyncWrite;
+use tokio_util::bytes::Bytes;
 use tracing::info;
 
 use crate::{
@@ -18,7 +21,7 @@ use crate::{
         propagate,
         table::{DetailFn, Table},
         tabs::Tab,
-        Widget,
+        Raw, Widget,
     },
 };
 
@@ -56,6 +59,11 @@ impl Widget for Shell {
     }
 }
 
+enum CommandState {
+    Input(Text),
+    Attached(Exec),
+}
+
 struct Command {
     txt: Text,
 }
@@ -82,7 +90,7 @@ impl Widget for Command {
             Event::Keypress(Keypress::Enter) => {
                 info!("executing command: {:?}", self.txt.content());
 
-                Ok(Broadcast::Raw(Box::new(Attach {})))
+                Ok(Broadcast::Raw(Box::new(Exec::new())))
             }
             _ => Ok(Broadcast::Ignored),
         }
@@ -100,15 +108,22 @@ impl Widget for Command {
     }
 }
 
-struct Attach {}
+struct Exec {}
 
-impl Widget for Attach {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        Ok(Broadcast::Ignored)
+impl Exec {
+    pub fn new() -> Self {
+        Self {}
     }
+}
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        info!("drawing attach");
+#[async_trait::async_trait]
+impl Raw for Exec {
+    async fn start(
+        &mut self,
+        stdin: UnboundedReceiver<Bytes>,
+        stdout: Box<dyn AsyncWrite + Send>,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

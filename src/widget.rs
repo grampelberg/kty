@@ -7,11 +7,14 @@ pub mod tabs;
 pub mod yaml;
 
 use eyre::Result;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use ratatui::{
     layout::{Constraint, Rect},
     widgets::Row,
     Frame,
 };
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_util::bytes::Bytes;
 
 use crate::{
     events::{Broadcast, Event},
@@ -26,6 +29,10 @@ pub trait TableRow<'a> {
 }
 
 pub trait Widget: Send {
+    fn _name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
 
     fn draw(&mut self, frame: &mut Frame, area: Rect);
@@ -33,7 +40,28 @@ pub trait Widget: Send {
 
 impl std::fmt::Debug for Box<dyn Widget> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Box<dyn Widget>").finish()
+        f.debug_struct(format!("Box<dyn Widget<{}>>", self._name()).as_str())
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+pub trait Raw: Send {
+    fn _name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    async fn start(
+        &mut self,
+        stdin: UnboundedReceiver<Bytes>,
+        stdout: Box<dyn AsyncWrite + Send>,
+    ) -> Result<()>;
+}
+
+impl std::fmt::Debug for Box<dyn Raw> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(format!("Box<dyn Raw<{}>>", self._name()).as_str())
+            .finish()
     }
 }
 
