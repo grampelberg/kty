@@ -18,7 +18,7 @@ use crate::{
     events::{Broadcast, Event, Keypress},
     widget::{
         pod::{self},
-        Widget,
+        Raw, Widget,
     },
 };
 
@@ -66,13 +66,13 @@ async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
 
 enum Mode {
     UI(Box<dyn Widget>),
-    Raw(Box<dyn Widget>, Box<dyn Widget>),
+    Raw(Box<dyn Raw>, Box<dyn Widget>),
 }
 
 impl Mode {
-    fn raw(&mut self, widget: Box<dyn Widget>) {
+    fn raw(&mut self, raw: Box<dyn Raw>) {
         replace_with_or_abort(self, |self_| match self_ {
-            Self::UI(previous) | Self::Raw(_, previous) => Self::Raw(widget, previous),
+            Self::UI(previous) | Self::Raw(_, previous) => Self::Raw(raw, previous),
         });
     }
 }

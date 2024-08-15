@@ -2,16 +2,17 @@ use std::str;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
+use futures::AsyncWrite;
 use ratatui::backend::WindowSize;
 
-use crate::widget::Widget;
+use crate::widget::{Raw, Widget};
 
 #[derive(Debug)]
 pub enum Broadcast {
     Consumed,
     Ignored,
     Exited,
-    Raw(Box<dyn Widget>),
+    Raw(Box<dyn Raw>),
 }
 
 #[derive(Debug, Clone)]
