@@ -4,10 +4,14 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
 use ratatui::backend::WindowSize;
 
+use crate::widget::Widget;
+
+#[derive(Debug)]
 pub enum Broadcast {
     Consumed,
     Ignored,
     Exited,
+    Raw(Box<dyn Widget>),
 }
 
 #[derive(Debug, Clone)]

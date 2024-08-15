@@ -9,18 +9,30 @@ use super::Widget;
 use crate::events::{Broadcast, Event, Keypress};
 
 #[derive(Default)]
-pub struct Filter {
+pub struct Text {
+    title: String,
     content: String,
     pos: u16,
 }
 
-impl Filter {
+impl Text {
+    pub fn with_title(mut self, title: &str) -> Self {
+        self.title = title.to_string();
+        self
+    }
+
+    pub fn with_content(mut self, content: &str) -> Self {
+        self.content = content.to_string();
+        self.pos = self.content.len() as u16;
+        self
+    }
+
     pub fn content(&self) -> &str {
         self.content.as_str()
     }
 }
 
-impl Widget for Filter {
+impl Widget for Text {
     // TODO: implement ctrl + a, ctrl + e, ctrl + k, ctrl + u
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         match event {
@@ -58,7 +70,11 @@ impl Widget for Filter {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let block = Block::default().title("Filter").borders(Borders::ALL);
+        let mut block = Block::default().borders(Borders::ALL);
+
+        if !self.title.is_empty() {
+            block = block.title(self.title.as_ref());
+        }
 
         let cmd_pos = block.inner(area);
 
