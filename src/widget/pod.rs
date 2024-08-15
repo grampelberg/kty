@@ -1,3 +1,4 @@
+pub mod container;
 pub mod shell;
 
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use ratatui::{
 use super::{
     loading::Loading,
     log::Log,
+    propagate,
     table::{DetailFn, Table},
     tabs::TabbedView,
     Widget,
@@ -39,7 +41,9 @@ impl List {
 
         Self {
             pods: pods.clone(),
-            table: Table::new("Pods".to_string(), Detail::from_store(client, pods.clone())),
+            table: Table::default()
+                .title("Pods")
+                .constructor(Detail::from_store(client, pods.clone())),
 
             route: Vec::new(),
         }
@@ -54,14 +58,13 @@ impl Widget for List {
             return Ok(Broadcast::Consumed);
         }
 
-        if matches!(self.table.dispatch(event)?, Broadcast::Consumed) {
-            return Ok(Broadcast::Consumed);
+        propagate!(self.table.dispatch(event), {});
+
+        if matches!(event, Event::Keypress(Keypress::Escape)) {
+            return Ok(Broadcast::Exited);
         }
 
-        match event {
-            Event::Keypress(Keypress::Escape) => Ok(Broadcast::Exited),
-            _ => Ok(Broadcast::Ignored),
-        }
+        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -113,7 +116,7 @@ impl Detail {
         let view = TabbedView::new(vec![
             Yaml::tab("Overview".to_string(), pod.clone()),
             Log::tab("Logs".to_string(), client.clone(), pod.clone()),
-            Shell::tab("Shell".to_string(), client.clone(), pod.clone()),
+            Shell::tab("Shell".to_string(), client.clone(), pod.clone()).no_margin(),
         ])
         .unwrap();
 
@@ -148,15 +151,9 @@ impl Detail {
 
 impl Widget for Detail {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        if matches!(self.view.dispatch(event)?, Broadcast::Consumed) {
-            return Ok(Broadcast::Consumed);
-        }
+        propagate!(self.view.dispatch(event), {});
 
-        let Event::Keypress(key) = event else {
-            return Ok(Broadcast::Ignored);
-        };
-
-        if matches!(key, Keypress::Escape) {
+        if matches!(event, Event::Keypress(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
         }
 

@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-use super::{filter::Filter, propagate, TableRow, Widget};
+use super::{input::Text, propagate, TableRow, Widget};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct RowStyle {
@@ -55,7 +55,7 @@ where
 
 enum State {
     List(TableState),
-    Filtered(TableState, Filter),
+    Filtered(TableState, Text),
     Detail(Box<dyn Widget>),
 }
 
@@ -70,7 +70,7 @@ impl State {
             _ => TableState::default().with_selected(0),
         };
 
-        *self = State::Filtered(state, Filter::default());
+        *self = State::Filtered(state, Text::default().with_title("Filter"));
     }
 
     fn detail(&mut self, widget: Box<dyn Widget>) {
@@ -86,27 +86,23 @@ impl Default for State {
 
 pub type DetailFn = Box<dyn Fn(usize, Option<&str>) -> Result<Box<dyn Widget>> + Send>;
 
+#[derive(Default)]
 pub struct Table {
     style: Style,
-    title: String,
+    title: Option<String>,
 
     state: State,
-    constructor: DetailFn,
+    constructor: Option<DetailFn>,
 }
 
 impl Table {
-    pub fn new(title: String, constructor: DetailFn) -> Self {
-        Self {
-            style: Style::default(),
-            title,
-
-            state: State::default(),
-            constructor,
-        }
+    pub fn title(mut self, title: &str) -> Self {
+        self.title = Some(title.to_string());
+        self
     }
 
-    pub fn title(mut self, title: &str) -> Self {
-        self.title = title.to_string();
+    pub fn constructor(mut self, constructor: DetailFn) -> Self {
+        self.constructor = Some(constructor);
         self
     }
 
@@ -121,12 +117,7 @@ impl Table {
             State::Detail(_) => return,
         };
 
-        let border = Block::default()
-            .title(self.title.as_str()) // TODO: need a breadcrumb
-            .borders(Borders::ALL)
-            .style(self.style.border);
-
-        let items = content.items(filter.map(Filter::content));
+        let items = content.items(filter.map(Text::content));
         let max = items.len().saturating_sub(1);
 
         if state.selected().unwrap_or_default() > max {
@@ -138,10 +129,24 @@ impl Table {
             .map(|item| item.row(&self.style.row))
             .collect::<Vec<_>>();
 
-        let table = widgets::Table::new(rows, K::constraints())
+        let mut table = widgets::Table::new(rows, K::constraints())
             .header(K::header().style(self.style.header))
-            .block(border)
             .highlight_style(self.style.selected);
+
+        let title = if let Some(title) = self.title.as_ref() {
+            title.as_str()
+        } else {
+            ""
+        };
+
+        if self.title.is_some() {
+            let border = Block::default()
+                .title(title) // TODO: need a breadcrumb
+                .borders(Borders::ALL)
+                .style(self.style.border);
+
+            table = table.block(border);
+        };
 
         frame.render_stateful_widget(table, area, state);
     }
@@ -207,10 +212,14 @@ impl Table {
             // TODO: this should be handled by a router
             Keypress::Printable('/') => self.state.filter(),
             Keypress::Enter => {
+                let Some(constructor) = self.constructor.as_ref() else {
+                    return Ok(Broadcast::Ignored);
+                };
+
                 let detail = {
-                    (self.constructor)(
+                    (constructor)(
                         state.selected().unwrap_or_default(),
-                        filter.map(Filter::content),
+                        filter.map(Text::content),
                     )?
                 };
 
@@ -241,7 +250,11 @@ impl Table {
     fn handle_route(&mut self, route: &[String]) -> Result<()> {
         let (first, rest) = route.split_first().unwrap();
 
-        let mut detail = { (self.constructor)(0, Some(first.as_str()))? };
+        let Some(constructor) = self.constructor.as_ref() else {
+            return Ok(());
+        };
+
+        let mut detail = { (constructor)(0, Some(first.as_str()))? };
 
         if !rest.is_empty() {
             detail.dispatch(&Event::Goto(rest.to_vec()))?;

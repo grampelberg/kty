@@ -7,17 +7,27 @@ use ratatui::{
     Frame,
 };
 
-use super::Widget;
+use super::{propagate, Widget};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Tab {
     name: String,
     widget: Box<dyn Fn() -> Box<dyn Widget> + Send>,
+    margin: u16,
 }
 
 impl Tab {
     pub fn new(name: String, widget: Box<dyn Fn() -> Box<dyn Widget> + Send>) -> Self {
-        Self { name, widget }
+        Self {
+            name,
+            widget,
+            margin: 2,
+        }
+    }
+
+    pub fn no_margin(mut self) -> Self {
+        self.margin = 0;
+        self
     }
 
     pub fn widget(&self) -> Box<dyn Widget> {
@@ -64,9 +74,7 @@ impl Widget for TabbedView {
             return Ok(Broadcast::Consumed);
         }
 
-        if matches!(self.current.dispatch(event)?, Broadcast::Consumed) {
-            return Ok(Broadcast::Consumed);
-        }
+        propagate!(self.current.dispatch(event), {});
 
         let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
@@ -113,7 +121,7 @@ impl Widget for TabbedView {
 
         let [nested] = Layout::default()
             .constraints([Constraint::Min(0)])
-            .horizontal_margin(2)
+            .horizontal_margin(self.items[self.idx].margin)
             .areas(body_area);
 
         self.current.draw(frame, nested);

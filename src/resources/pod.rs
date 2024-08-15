@@ -2,7 +2,8 @@ use std::{borrow::Borrow, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
 use k8s_openapi::api::core::v1::{
-    ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
+    self, ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
+    PodSpec, PodStatus,
 };
 use kube::ResourceExt;
 use ratatui::{
@@ -10,8 +11,15 @@ use ratatui::{
     widgets::{Cell, Row},
 };
 
-use super::Filter;
-use crate::widget::{table::RowStyle, TableRow};
+use super::{
+    age::Age,
+    container::{Container, ContainerExt},
+    Filter,
+};
+use crate::widget::{
+    table::{Content, RowStyle},
+    TableRow,
+};
 
 pub enum Phase {
     Pending,
@@ -50,6 +58,7 @@ pub trait PodExt {
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
+    fn containers(&self) -> Vec<Container>;
 }
 
 impl PodExt for Pod {
@@ -163,6 +172,35 @@ impl PodExt for Pod {
 
         Some(statuses.join(", ")).borrow().into()
     }
+
+    fn containers(&self) -> Vec<Container> {
+        let mut containers: Vec<Container> = self
+            .spec
+            .as_ref()
+            .map(|spec| {
+                spec.containers
+                    .iter()
+                    .map(|c| Container::new(c.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let Some(PodStatus {
+            container_statuses: Some(status),
+            ..
+        }) = &self.status
+        else {
+            return containers;
+        };
+
+        for status in status {
+            if let Some(container) = containers.iter_mut().find(|c| c.name_any() == status.name) {
+                container.with_status(status.clone());
+            }
+        }
+
+        containers
+    }
 }
 
 impl<'a> TableRow<'a> for Arc<Pod> {
@@ -211,43 +249,11 @@ impl Filter for Pod {
     }
 }
 
-// TODO: this should probably be moved somewhere it can be used by other widgets
-trait Age {
-    fn to_age(&self) -> String;
-}
-
-impl Age for TimeDelta {
-    fn to_age(&self) -> String {
-        let mut out = vec![];
-
-        if self.num_weeks() != 0 {
-            out.push(format!("{}w", self.num_weeks()));
-        }
-
-        let days = self.num_days() % 7;
-        if days != 0 {
-            out.push(format!("{days}d"));
-        }
-
-        let hrs = self.num_hours() % 24;
-        if hrs != 0 {
-            out.push(format!("{hrs}h"));
-        }
-
-        let mins = self.num_minutes() % 60;
-        if mins != 0 {
-            out.push(format!("{mins}m"));
-        }
-
-        let secs = self.num_seconds() % 60;
-        if secs != 0 {
-            out.push(format!("{secs}s"));
-        }
-
-        if out.is_empty() {
-            return "0s".to_string();
-        }
-
-        out.into_iter().take(2).collect::<String>()
+impl<'a> Content<'a, Container> for Arc<Pod> {
+    fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>> {
+        self.containers()
+            .into_iter()
+            .filter(|c| filter.map_or(true, |f| c.name_any().contains(f)))
+            .collect()
     }
 }

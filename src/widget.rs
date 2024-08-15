@@ -1,4 +1,4 @@
-pub mod filter;
+pub mod input;
 pub mod loading;
 pub mod log;
 pub mod pod;
@@ -31,10 +31,17 @@ pub trait Widget: Send {
     fn draw(&mut self, frame: &mut Frame, area: Rect);
 }
 
+impl std::fmt::Debug for Box<dyn Widget> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Box<dyn Widget>").finish()
+    }
+}
+
 #[macro_export]
 macro_rules! propagate {
     ($fn:expr, $exit:expr) => {
-        match $fn? {
+        let result = $fn?;
+        match result {
             Broadcast::Consumed => return Ok(Broadcast::Consumed),
             Broadcast::Exited => {
                 $exit;
@@ -42,6 +49,7 @@ macro_rules! propagate {
                 return Ok(Broadcast::Consumed);
             }
             Broadcast::Ignored => {}
+            Broadcast::Raw(_) => return Ok(result),
         }
     };
 }

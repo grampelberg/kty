@@ -51,6 +51,7 @@ ratatui = { version = "0.27.0", features = [
     "unstable-widget-ref",
 ] }
 regex = "1.10.6"
+replace_with = "0.1.7"
 reqwest = { version = "0.12.5", features = ["json", "stream", "multipart"] }
 russh = "0.44.0"
 russh-keys = "0.44.0"
