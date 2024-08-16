@@ -2,10 +2,10 @@ use std::str;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use eyre::{eyre, Result};
-use futures::AsyncWrite;
 use ratatui::backend::WindowSize;
+use tokio_util::bytes::Bytes;
 
-use crate::widget::{Raw, Widget};
+use crate::widget::Raw;
 
 #[derive(Debug)]
 pub enum Broadcast {
@@ -28,7 +28,19 @@ impl TryInto<Event> for &[u8] {
     type Error = eyre::Report;
 
     fn try_into(self) -> Result<Event> {
+        if self.is_empty() {
+            return Ok(Event::Render);
+        }
+
         Ok(Event::Keypress(self.try_into()?))
+    }
+}
+
+impl TryInto<Event> for Bytes {
+    type Error = eyre::Report;
+
+    fn try_into(self) -> Result<Event> {
+        (&self[..]).try_into()
     }
 }
 

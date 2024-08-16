@@ -85,6 +85,7 @@ impl From<Option<&ContainerState>> for State {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Container {
     spec: v1::Container,
     status: Option<ContainerStatus>,

@@ -1,8 +1,13 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
+use derive_builder::Builder;
 use eyre::{eyre, Result};
-use futures::channel::mpsc::UnboundedReceiver;
-use k8s_openapi::api::core::v1::Pod;
+use futures::{future::BoxFuture, StreamExt};
+use k8s_openapi::{api::core::v1::Pod, apimachinery::pkg::apis::meta::v1::Status};
+use kube::{
+    api::{Api, AttachParams, TerminalSize},
+    ResourceExt,
+};
 use ratatui::{
     layout::Rect,
     prelude::*,
@@ -10,16 +15,23 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders, Paragraph},
 };
-use tokio::io::AsyncWrite;
-use tokio_util::bytes::Bytes;
+use tokio::{
+    io::{AsyncWrite, AsyncWriteExt},
+    sync::mpsc::UnboundedReceiver,
+};
+use tokio_util::{bytes::Bytes, io::ReaderStream};
 use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
+    resources::{
+        container::{Container, ContainerExt},
+        pod::PodExt,
+    },
     widget::{
         input::Text,
         propagate,
-        table::{DetailFn, Table},
+        table::{Content, DetailFn, Table},
         tabs::Tab,
         Raw, Widget,
     },
@@ -49,9 +61,15 @@ impl Shell {
 impl Widget for Shell {
     // TODO: handle raw and close the detail view.
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.table.dispatch(event), {});
+        match self.table.dispatch(event)? {
+            Broadcast::Raw(raw) => {
+                self.table.exit();
 
-        Ok(Broadcast::Ignored)
+                Ok(Broadcast::Raw(raw))
+            }
+            Broadcast::Exited => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
+        }
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -65,20 +83,38 @@ enum CommandState {
 }
 
 struct Command {
+    client: kube::Client,
+    pod: Arc<Pod>,
+    container: Container,
+
     txt: Text,
 }
 
 impl Command {
-    pub fn new() -> Self {
+    pub fn new(client: kube::Client, pod: Arc<Pod>, container: Container) -> Self {
+        let title = container.name_any().to_string();
+
         Self {
+            client,
+            pod,
+            container,
+
             txt: Text::default()
-                .with_title("Command")
+                .with_title(title.as_str())
                 .with_content("/bin/bash"),
         }
     }
 
     pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> DetailFn {
-        Box::new(move |idx, filter| Ok(Box::new(Command::new())))
+        Box::new(move |idx, filter| {
+            let containers = pod.containers(filter);
+
+            Ok(Box::new(Command::new(
+                client.clone(),
+                pod.clone(),
+                containers.get(idx).unwrap().clone(),
+            )))
+        })
     }
 }
 
@@ -87,11 +123,14 @@ impl Widget for Command {
         propagate!(self.txt.dispatch(event), return Ok(Broadcast::Exited));
 
         match event {
-            Event::Keypress(Keypress::Enter) => {
-                info!("executing command: {:?}", self.txt.content());
-
-                Ok(Broadcast::Raw(Box::new(Exec::new())))
-            }
+            Event::Keypress(Keypress::Enter) => Ok(Broadcast::Raw(Box::new(
+                ExecBuilder::default()
+                    .client(self.client.clone())
+                    .pod(self.pod.clone())
+                    .container(self.container.clone())
+                    .cmd(self.txt.content().to_string())
+                    .build()?,
+            ))),
             _ => Ok(Broadcast::Ignored),
         }
     }
@@ -108,21 +147,81 @@ impl Widget for Command {
     }
 }
 
-struct Exec {}
-
-impl Exec {
-    pub fn new() -> Self {
-        Self {}
-    }
+#[derive(Builder)]
+struct Exec {
+    client: kube::Client,
+    pod: Arc<Pod>,
+    container: Container,
+    cmd: String,
 }
 
 #[async_trait::async_trait]
 impl Raw for Exec {
     async fn start(
         &mut self,
-        stdin: UnboundedReceiver<Bytes>,
-        stdout: Box<dyn AsyncWrite + Send>,
+        stdin: &mut UnboundedReceiver<Bytes>,
+        mut stdout: Pin<Box<dyn AsyncWrite + Send + Unpin>>,
     ) -> Result<()> {
+        let mut proc = Api::<Pod>::namespaced(self.client.clone(), &self.pod.namespace().unwrap())
+            .exec(
+                &self.pod.name_any(),
+                vec![self.cmd.as_str()],
+                &AttachParams {
+                    container: Some(self.container.name_any().to_string()),
+                    stdin: true,
+                    stdout: true,
+                    stderr: false,
+                    tty: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let status = proc.take_status().ok_or(eyre!("status not available"))?;
+
+        let mut output = ReaderStream::new(proc.stdout().ok_or(eyre!("stdout not available"))?);
+        let mut input = proc.stdin().ok_or(eyre!("stdin not available"))?;
+
+        // TODO: handle resize events.
+
+        loop {
+            tokio::select! {
+                msg = stdin.recv() => {
+                    let Some(msg) = msg else {
+                        break;
+                    };
+
+                    input.write_all(&msg).await?;
+                    input.flush().await?;
+
+                    if matches!(msg.try_into()?, Event::Keypress(Keypress::Control('b'))) {
+                        break;
+                    }
+                }
+                msg = output.next() => {
+                    let Some(msg) = msg else {
+                        break;
+                    };
+
+                    stdout.write_all(&msg?).await?;
+                    stdout.flush().await?;
+
+                }
+            }
+        }
+
+        if let Some(Status {
+            status: Some(result),
+            ..
+        }) = status.await
+        {
+            if result != "Success" {
+                return Err(eyre!("command failed: {}", result));
+            }
+        }
+
+        proc.join().await?;
+
         Ok(())
     }
 }

@@ -58,7 +58,7 @@ pub trait PodExt {
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
-    fn containers(&self) -> Vec<Container>;
+    fn containers(&self, filter: Option<&str>) -> Vec<Container>;
 }
 
 impl PodExt for Pod {
@@ -173,7 +173,7 @@ impl PodExt for Pod {
         Some(statuses.join(", ")).borrow().into()
     }
 
-    fn containers(&self) -> Vec<Container> {
+    fn containers(&self, filter: Option<&str>) -> Vec<Container> {
         let mut containers: Vec<Container> = self
             .spec
             .as_ref()
@@ -199,7 +199,14 @@ impl PodExt for Pod {
             }
         }
 
+        if filter.is_none() {
+            return containers;
+        }
+
         containers
+            .into_iter()
+            .filter(|c| filter.map_or(true, |f| c.name_any().contains(f)))
+            .collect()
     }
 }
 
@@ -251,9 +258,6 @@ impl Filter for Pod {
 
 impl<'a> Content<'a, Container> for Arc<Pod> {
     fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>> {
-        self.containers()
-            .into_iter()
-            .filter(|c| filter.map_or(true, |f| c.name_any().contains(f)))
-            .collect()
+        self.containers(filter)
     }
 }

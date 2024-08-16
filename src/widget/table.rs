@@ -106,6 +106,10 @@ impl Table {
         self
     }
 
+    pub fn exit(&mut self) {
+        self.state.list();
+    }
+
     fn render_list<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C)
     where
         C: Content<'a, K>,
