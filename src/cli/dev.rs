@@ -1,5 +1,6 @@
 mod dashboard;
 mod shell;
+mod stdin;
 
 use cata::{Command, Container};
 use clap::{Parser, Subcommand};
@@ -15,6 +16,7 @@ pub struct Dev {
 enum DevCmd {
     Dashboard(dashboard::Dashboard),
     Shell(shell::Shell),
+    Stdin(stdin::Stdin),
 }
 
 impl Command for Dev {}

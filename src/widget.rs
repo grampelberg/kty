@@ -6,14 +6,18 @@ pub mod table;
 pub mod tabs;
 pub mod yaml;
 
+use std::pin::Pin;
+
 use eyre::Result;
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use ratatui::{
     layout::{Constraint, Rect},
     widgets::Row,
     Frame,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::mpsc::UnboundedReceiver,
+};
 use tokio_util::bytes::Bytes;
 
 use crate::{
@@ -53,8 +57,8 @@ pub trait Raw: Send {
 
     async fn start(
         &mut self,
-        stdin: UnboundedReceiver<Bytes>,
-        stdout: Box<dyn AsyncWrite + Send>,
+        stdin: &mut UnboundedReceiver<Bytes>,
+        mut stdout: Pin<Box<dyn AsyncWrite + Send + Unpin>>,
     ) -> Result<()>;
 }
 

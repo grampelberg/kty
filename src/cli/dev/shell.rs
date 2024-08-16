@@ -98,6 +98,12 @@ impl Command for Shell {
 
         let (stdin_tx, mut stdin) = unbounded_channel::<Bytes>();
 
+        // Note: this works accidentally, for whatever reason the mio loop is tight
+        // enough to block rx.recv() from ever completing but allows ticks through fine.
+        // The correct solution is to spawn mio in a blocking task. Note: this means
+        // that the background thread can't be aborted and must instead be garbage
+        // collected via dropping the receiver itself (which should happen when the
+        // event loop exists anyways).
         tokio::spawn(poll_stdin(stdin_tx));
 
         let mut stdout = tokio::io::stdout();
