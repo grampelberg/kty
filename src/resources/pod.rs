@@ -1,9 +1,13 @@
-use std::{borrow::Borrow, sync::Arc};
+use std::{borrow::Borrow, error::Error, fmt::Display, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
-use k8s_openapi::api::core::v1::{
-    self, ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
-    PodSpec, PodStatus,
+use itertools::Itertools;
+use k8s_openapi::{
+    api::core::v1::{
+        ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
+        PodStatus,
+    },
+    apimachinery::pkg::apis::meta::v1,
 };
 use kube::ResourceExt;
 use ratatui::{
@@ -20,6 +24,44 @@ use crate::widget::{
     table::{Content, RowStyle},
     TableRow,
 };
+
+// TODO: There's probably a better debug implementation than this.
+#[derive(Clone, Debug)]
+pub struct StatusError {
+    inner: v1::Status,
+}
+
+impl StatusError {
+    pub fn new(inner: v1::Status) -> Self {
+        Self { inner }
+    }
+}
+
+impl Error for StatusError {}
+
+impl Display for StatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lines = self
+            .inner
+            .message
+            .as_ref()
+            .map_or(format!("{:#?}", self.inner), |msg| {
+                msg.split(':').map(str::trim).join("\n")
+            });
+
+        write!(f, "{lines}")
+    }
+}
+
+pub trait StatusExt {
+    fn is_success(&self) -> bool;
+}
+
+impl StatusExt for v1::Status {
+    fn is_success(&self) -> bool {
+        self.status == Some("Success".to_string())
+    }
+}
 
 pub enum Phase {
     Pending,
@@ -53,12 +95,13 @@ impl std::fmt::Display for Phase {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub trait PodExt {
     fn age(&self) -> TimeDelta;
     fn ready(&self) -> String;
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
-    fn containers(&self, filter: Option<&str>) -> Vec<Container>;
+    fn containers(&self, filter: Option<String>) -> Vec<Container>;
 }
 
 impl PodExt for Pod {
@@ -173,7 +216,7 @@ impl PodExt for Pod {
         Some(statuses.join(", ")).borrow().into()
     }
 
-    fn containers(&self, filter: Option<&str>) -> Vec<Container> {
+    fn containers(&self, filter: Option<String>) -> Vec<Container> {
         let mut containers: Vec<Container> = self
             .spec
             .as_ref()
@@ -205,7 +248,7 @@ impl PodExt for Pod {
 
         containers
             .into_iter()
-            .filter(|c| filter.map_or(true, |f| c.name_any().contains(f)))
+            .filter(|c| filter.as_ref().map_or(true, |f| c.name_any().contains(f)))
             .collect()
     }
 }
@@ -257,7 +300,7 @@ impl Filter for Pod {
 }
 
 impl<'a> Content<'a, Container> for Arc<Pod> {
-    fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>> {
+    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
         self.containers(filter)
     }
 }

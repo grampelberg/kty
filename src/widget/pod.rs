@@ -58,7 +58,7 @@ impl Widget for List {
             return Ok(Broadcast::Consumed);
         }
 
-        propagate!(self.table.dispatch(event), {});
+        propagate!(self.table.dispatch(event));
 
         if matches!(event, Event::Keypress(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
@@ -151,7 +151,7 @@ impl Detail {
 
 impl Widget for Detail {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.view.dispatch(event), {});
+        propagate!(self.view.dispatch(event));
 
         if matches!(event, Event::Keypress(Keypress::Escape)) {
             return Ok(Broadcast::Exited);

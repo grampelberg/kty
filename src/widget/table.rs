@@ -50,7 +50,7 @@ pub trait Content<'a, K>
 where
     K: TableRow<'a>,
 {
-    fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>>;
+    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>>;
 }
 
 enum State {
@@ -84,7 +84,7 @@ impl Default for State {
     }
 }
 
-pub type DetailFn = Box<dyn Fn(usize, Option<&str>) -> Result<Box<dyn Widget>> + Send>;
+pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<Box<dyn Widget>> + Send>;
 
 #[derive(Default)]
 pub struct Table {
@@ -108,6 +108,18 @@ impl Table {
 
     pub fn exit(&mut self) {
         self.state.list();
+    }
+
+    pub fn enter(&mut self, idx: usize, filter: Option<String>) -> Result<Broadcast> {
+        let Some(constructor) = self.constructor.as_ref() else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        let detail = { (constructor)(idx, filter)? };
+
+        self.state.detail(detail);
+
+        Ok(Broadcast::Consumed)
     }
 
     fn render_list<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C)
@@ -216,18 +228,12 @@ impl Table {
             // TODO: this should be handled by a router
             Keypress::Printable('/') => self.state.filter(),
             Keypress::Enter => {
-                let Some(constructor) = self.constructor.as_ref() else {
-                    return Ok(Broadcast::Ignored);
-                };
+                let idx = state.selected().unwrap_or_default();
+                let filter = filter.map(|f| f.content().to_string());
 
-                let detail = {
-                    (constructor)(
-                        state.selected().unwrap_or_default(),
-                        filter.map(Text::content),
-                    )?
-                };
+                self.enter(idx, filter)?;
 
-                self.state.detail(detail);
+                return Ok(Broadcast::Consumed);
             }
             _ => return Ok(Broadcast::Ignored),
         }
@@ -254,17 +260,9 @@ impl Table {
     fn handle_route(&mut self, route: &[String]) -> Result<()> {
         let (first, rest) = route.split_first().unwrap();
 
-        let Some(constructor) = self.constructor.as_ref() else {
-            return Ok(());
-        };
+        self.enter(0, Some(first.to_string()))?;
 
-        let mut detail = { (constructor)(0, Some(first.as_str()))? };
-
-        if !rest.is_empty() {
-            detail.dispatch(&Event::Goto(rest.to_vec()))?;
-        }
-
-        self.state.detail(detail);
+        self.dispatch_detail(&Event::Goto(rest.to_vec()))?;
 
         Ok(())
     }

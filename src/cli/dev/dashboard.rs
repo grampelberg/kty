@@ -1,24 +1,17 @@
-use std::{borrow::BorrowMut, io::Read, iter::Iterator, ops::Deref, os::fd::AsRawFd, pin::Pin};
+use std::{io::Read, iter::Iterator, os::fd::AsRawFd, pin::Pin};
 
 use cata::{Command, Container};
 use clap::Parser;
-use crossterm::event::EventStream;
 use eyre::{eyre, Result};
-use futures::{channel::mpsc::Sender, FutureExt, SinkExt, StreamExt};
-use k8s_openapi::{api::core::v1::Pod, apimachinery::pkg::apis::meta::v1::Status};
-use kube::api::{AttachParams, TerminalSize};
 use mio::{unix::SourceFd, Events, Interest, Poll};
-use ratatui::{backend::CrosstermBackend, prelude::Backend, widgets::Clear, Terminal};
+use ratatui::{backend::CrosstermBackend, prelude::Backend, Terminal};
 use replace_with::replace_with_or_abort;
 use tokio::{
-    io::AsyncWriteExt,
-    signal,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     task::JoinSet,
     time::Duration,
 };
 use tokio_util::bytes::Bytes;
-use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -147,13 +140,13 @@ fn dispatch(mode: &mut Mode, term: &mut Terminal<impl Backend>, ev: &Event) -> R
 
 async fn raw(
     term: &mut Terminal<impl Backend>,
-    widget: &mut Box<dyn Raw>,
+    raw_widget: &mut Box<dyn Raw>,
     input: &mut UnboundedReceiver<Bytes>,
 ) -> Result<()> {
     term.clear()?;
     term.reset_cursor()?;
 
-    widget
+    raw_widget
         .start(input, Pin::new(Box::new(tokio::io::stdout())))
         .await?;
 
@@ -183,8 +176,10 @@ where
 
         let result = match state {
             Mode::UI(_) => dispatch(&mut state, &mut term, &event)?,
-            Mode::Raw(ref mut widget, _) => {
-                raw(&mut term, widget, &mut rx).await?;
+            Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
+                let result = raw(&mut term, raw_widget, &mut rx).await;
+
+                current_widget.dispatch(&Event::Finished(result))?;
 
                 state.ui();
 
@@ -207,7 +202,6 @@ where
 }
 
 trait ClearScreen {
-    fn clear(&mut self) -> Result<()>;
     fn reset_cursor(&mut self) -> Result<()>;
 }
 
@@ -215,14 +209,6 @@ impl<B> ClearScreen for Terminal<B>
 where
     B: Backend,
 {
-    fn clear(&mut self) -> Result<()> {
-        self.draw(|frame| {
-            frame.render_widget(Clear, frame.size());
-        })?;
-
-        Ok(())
-    }
-
     fn reset_cursor(&mut self) -> Result<()> {
         self.draw(|frame| {
             frame.set_cursor(0, 0);

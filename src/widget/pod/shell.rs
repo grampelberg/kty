@@ -1,37 +1,36 @@
-use std::{pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc, vec};
 
 use derive_builder::Builder;
 use eyre::{eyre, Result};
-use futures::{future::BoxFuture, StreamExt};
-use k8s_openapi::{api::core::v1::Pod, apimachinery::pkg::apis::meta::v1::Status};
+use futures::StreamExt;
+use k8s_openapi::api::core::v1::Pod;
 use kube::{
-    api::{Api, AttachParams, TerminalSize},
+    api::{Api, AttachParams},
     ResourceExt,
 };
 use ratatui::{
     layout::Rect,
     prelude::*,
-    style::{Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, Paragraph},
+    style::{palette::tailwind, Modifier, Style},
+    widgets,
+    widgets::{Block, Borders, Row},
 };
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::mpsc::UnboundedReceiver,
 };
 use tokio_util::{bytes::Bytes, io::ReaderStream};
-use tracing::info;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::{
         container::{Container, ContainerExt},
-        pod::PodExt,
+        pod::{PodExt, StatusError, StatusExt},
     },
     widget::{
         input::Text,
         propagate,
-        table::{Content, DetailFn, Table},
+        table::{DetailFn, Table},
         tabs::Tab,
         Raw, Widget,
     },
@@ -44,10 +43,13 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
-        Self {
-            pod: pod.clone(),
-            table: Table::default().constructor(Command::from_pod(client, pod)),
+        let mut table = Table::default().constructor(Command::from_pod(client, pod.clone()));
+
+        if pod.as_ref().containers(None).len() == 1 {
+            let _unused = table.enter(0, None);
         }
+
+        Self { pod, table }
     }
 
     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
@@ -61,15 +63,7 @@ impl Shell {
 impl Widget for Shell {
     // TODO: handle raw and close the detail view.
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        match self.table.dispatch(event)? {
-            Broadcast::Raw(raw) => {
-                self.table.exit();
-
-                Ok(Broadcast::Raw(raw))
-            }
-            Broadcast::Exited => Ok(Broadcast::Exited),
-            _ => Ok(Broadcast::Ignored),
-        }
+        self.table.dispatch(event)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -79,30 +73,36 @@ impl Widget for Shell {
 
 enum CommandState {
     Input(Text),
-    Attached(Exec),
+    Attached,
+    Error(String),
 }
+
+static COMMAND: &str = "/bin/bash";
 
 struct Command {
     client: kube::Client,
     pod: Arc<Pod>,
     container: Container,
 
-    txt: Text,
+    state: CommandState,
 }
 
 impl Command {
     pub fn new(client: kube::Client, pod: Arc<Pod>, container: Container) -> Self {
-        let title = container.name_any().to_string();
+        let state = CommandState::Input(Command::input(&container));
 
         Self {
             client,
             pod,
             container,
-
-            txt: Text::default()
-                .with_title(title.as_str())
-                .with_content("/bin/bash"),
+            state,
         }
+    }
+
+    fn input(container: &Container) -> Text {
+        Text::default()
+            .with_title(container.name_any())
+            .with_content(COMMAND)
     }
 
     pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> DetailFn {
@@ -116,26 +116,58 @@ impl Command {
             )))
         })
     }
-}
 
-impl Widget for Command {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.txt.dispatch(event), return Ok(Broadcast::Exited));
+    fn dispatch_input(&mut self, event: &Event) -> Result<Broadcast> {
+        let cmd = {
+            let CommandState::Input(ref mut txt) = self.state else {
+                return Ok(Broadcast::Ignored);
+            };
+
+            propagate!(txt.dispatch(event));
+
+            txt.content().to_string()
+        };
 
         match event {
-            Event::Keypress(Keypress::Enter) => Ok(Broadcast::Raw(Box::new(
-                ExecBuilder::default()
-                    .client(self.client.clone())
-                    .pod(self.pod.clone())
-                    .container(self.container.clone())
-                    .cmd(self.txt.content().to_string())
-                    .build()?,
-            ))),
+            Event::Keypress(Keypress::Enter) => {
+                self.state = CommandState::Attached;
+
+                Ok(Broadcast::Raw(Box::new(
+                    ExecBuilder::default()
+                        .client(self.client.clone())
+                        .pod(self.pod.clone())
+                        .container(self.container.clone())
+                        .cmd(cmd)
+                        .build()?,
+                )))
+            }
+            Event::Keypress(Keypress::Escape) => Ok(Broadcast::Exited),
             _ => Ok(Broadcast::Ignored),
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    #[allow(clippy::unnecessary_wraps)]
+    fn dispatch_error(&mut self, event: &Event) -> Result<Broadcast> {
+        if !matches!(self.state, CommandState::Error(_)) {
+            return Ok(Broadcast::Ignored);
+        }
+
+        match event {
+            // TODO: should handle scrolling inside the error message.
+            Event::Keypress(_) => {
+                self.state = CommandState::Input(Command::input(&self.container));
+
+                Ok(Broadcast::Consumed)
+            }
+            _ => Ok(Broadcast::Ignored),
+        }
+    }
+
+    fn draw_input(&mut self, frame: &mut Frame, area: Rect) {
+        let CommandState::Input(ref mut txt) = self.state else {
+            return;
+        };
+
         let [_, area, _] = Layout::vertical([
             Constraint::Fill(0),
             Constraint::Length(3),
@@ -143,7 +175,94 @@ impl Widget for Command {
         ])
         .areas(area);
 
-        self.txt.draw(frame, area);
+        let [_, area, _] = Layout::horizontal([
+            Constraint::Max(10),
+            Constraint::Fill(0),
+            Constraint::Max(10),
+        ])
+        .areas(area);
+
+        txt.draw(frame, area);
+    }
+
+    // TODO: this should be a separate widget of its own.
+    #[allow(clippy::cast_possible_truncation)]
+    fn draw_error(&mut self, frame: &mut Frame, area: Rect) {
+        let CommandState::Error(ref err) = self.state else {
+            return;
+        };
+
+        let block = Block::default()
+            .title("Error")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red))
+            .title_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+
+        // TODO: get this into a variable so that it can be styled.
+        let rows: Vec<Row> = err
+            .split('\n')
+            .enumerate()
+            .map(|(i, line)| {
+                Row::new(vec![
+                    Span::from(format!("{i}: "))
+                        .style(style::Style::default().fg(tailwind::RED.c300)),
+                    Span::from(line),
+                ])
+            })
+            .collect();
+
+        let height = rows.len() as u16 + 2;
+
+        let content =
+            widgets::Table::new(rows, vec![Constraint::Max(3), Constraint::Fill(0)]).block(block);
+
+        let [_, area, _] = Layout::horizontal([
+            Constraint::Max(10),
+            Constraint::Fill(0),
+            Constraint::Max(10),
+        ])
+        .areas(area);
+
+        let [_, mut vert, _] = Layout::vertical([
+            Constraint::Max(10),
+            Constraint::Fill(0),
+            Constraint::Max(10),
+        ])
+        .areas(area);
+
+        if vert.height > height {
+            vert.height = height;
+        }
+
+        frame.render_widget(content, vert);
+    }
+}
+
+impl Widget for Command {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        propagate!(self.dispatch_input(event));
+        propagate!(self.dispatch_error(event));
+
+        match event {
+            Event::Finished(result) => {
+                let Err(err) = result else {
+                    return Ok(Broadcast::Exited);
+                };
+
+                self.state = CommandState::Error(err.to_string());
+
+                Ok(Broadcast::Consumed)
+            }
+            _ => Ok(Broadcast::Ignored),
+        }
+    }
+
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        match self.state {
+            CommandState::Input(_) => self.draw_input(frame, area),
+            CommandState::Attached => {}
+            CommandState::Error(_) => self.draw_error(frame, area),
+        }
     }
 }
 
@@ -210,21 +329,31 @@ impl Raw for Exec {
             }
         }
 
-        if let Some(Status {
-            status: Some(result),
-            ..
-        }) = status.await
-        {
-            if result != "Success" {
-                return Err(eyre!("command failed: {}", result));
-            }
-        }
+        status
+            .await
+            .map(|status| {
+                if status.is_success() {
+                    Ok(())
+                } else {
+                    Err(StatusError::new(status))
+                }
+            })
+            .ok_or(eyre!("status not available"))??;
 
         proc.join().await?;
 
         Ok(())
     }
 }
+
+// match err.downcast::<StatusError>() {
+//     Ok(status) => {
+//         info!(?status, "error executing command");
+//     }
+//     Err(err) => return Err(err),
+// }
+
+// write!(f, "{lines}")
 
 // fn handles(
 //     proc: &AttachedProcess,

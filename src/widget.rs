@@ -14,10 +14,7 @@ use ratatui::{
     widgets::Row,
     Frame,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::mpsc::UnboundedReceiver,
-};
+use tokio::{io::AsyncWrite, sync::mpsc::UnboundedReceiver};
 use tokio_util::bytes::Bytes;
 
 use crate::{
@@ -69,19 +66,28 @@ impl std::fmt::Debug for Box<dyn Raw> {
     }
 }
 
+/// Handle propagation of events from calls to `dispatch()`. This macro returns
+/// immediately if the event is used (eg consumed). Pass an expression as the
+/// second argument to handle (and consume) child components that exit.
 #[macro_export]
 macro_rules! propagate {
+    ($fn:expr) => {
+        let result = $fn?;
+        match result {
+            Broadcast::Ignored => {}
+            _ => return Ok(result),
+        }
+    };
     ($fn:expr, $exit:expr) => {
         let result = $fn?;
         match result {
-            Broadcast::Consumed => return Ok(Broadcast::Consumed),
             Broadcast::Exited => {
                 $exit;
 
                 return Ok(Broadcast::Consumed);
             }
             Broadcast::Ignored => {}
-            Broadcast::Raw(_) => return Ok(result),
+            _ => return Ok(result),
         }
     };
 }
