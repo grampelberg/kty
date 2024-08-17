@@ -1,3 +1,4 @@
+pub mod debug;
 pub mod input;
 pub mod loading;
 pub mod log;
@@ -27,8 +28,6 @@ pub trait TableRow<'a> {
 
     fn row(&self, style: &RowStyle) -> Row;
     fn header() -> Row<'a>;
-
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering;
 }
 
 pub trait Widget: Send {

@@ -18,7 +18,7 @@ use ratatui::{
 use super::{
     age::Age,
     container::{Container, ContainerExt},
-    Filter,
+    Compare, Filter,
 };
 use crate::widget::{
     table::{Content, RowStyle},
@@ -291,7 +291,15 @@ impl<'a> TableRow<'a> for Arc<Pod> {
             Phase::Unknown(_) => style.unhealthy,
         })
     }
+}
 
+impl Filter for Pod {
+    fn matches(&self, filter: &str) -> bool {
+        self.name_any().contains(filter)
+    }
+}
+
+impl Compare for Arc<Pod> {
     fn cmp(&self, other: &Self) -> Ordering {
         let lhs = self
             .namespace()
@@ -303,12 +311,6 @@ impl<'a> TableRow<'a> for Arc<Pod> {
         }
 
         self.name_any().cmp(&other.name_any())
-    }
-}
-
-impl Filter for Pod {
-    fn matches(&self, filter: &str) -> bool {
-        self.name_any().contains(filter)
     }
 }
 

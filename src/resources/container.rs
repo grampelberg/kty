@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Cell, Row},
 };
 
-use super::age::Age;
+use super::{age::Age, Compare};
 use crate::widget::{table::RowStyle, TableRow};
 
 #[allow(clippy::module_name_repetitions)]
@@ -213,7 +213,9 @@ impl<'a> TableRow<'a> for Container {
             _ => style.unhealthy,
         })
     }
+}
 
+impl Compare for Container {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.name_any().cmp(other.name_any())
     }

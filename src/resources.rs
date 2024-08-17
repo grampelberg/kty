@@ -201,3 +201,7 @@ where
 pub trait Filter {
     fn matches(&self, filter: &str) -> bool;
 }
+
+pub trait Compare {
+    fn cmp(&self, right: &Self) -> std::cmp::Ordering;
+}

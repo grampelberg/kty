@@ -14,7 +14,7 @@ use kube::{
 use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
 
-use super::Filter;
+use super::{Compare, Filter};
 use crate::widget::{table, TableRow};
 
 async fn is_ready<K>(reader: reflector::Store<K>) -> Result<(), WriterDropped>
@@ -55,6 +55,7 @@ where
         + Sync
         + DeserializeOwned
         + 'static,
+    Arc<K>: Compare,
 {
     // TODO: need to have a way to filter stuff out (with some defaults) to keep
     // from memory going nuts.
@@ -86,16 +87,24 @@ where
         self.reader.state()
     }
 
-    pub fn get(&self, idx: usize, filter: Option<String>) -> Option<Arc<K>> {
-        filter
+    pub fn items(&self, filter: Option<String>) -> Vec<Arc<K>> {
+        let mut items = filter
             .map(|filter| {
                 self.reader
                     .state()
                     .into_iter()
                     .filter(|obj| obj.matches(filter.as_str()))
-                    .nth(idx)
+                    .collect()
             })
-            .unwrap_or(self.reader.state().get(idx).cloned())
+            .unwrap_or(self.reader.state());
+
+        items.sort_by(Compare::cmp);
+
+        items
+    }
+
+    pub fn get(&self, idx: usize, filter: Option<String>) -> Option<Arc<K>> {
+        self.items(filter).get(idx).cloned()
     }
 
     pub fn loading(&self) -> bool {
@@ -129,21 +138,9 @@ where
         + Sync
         + DeserializeOwned
         + 'static,
-    Arc<K>: TableRow<'a>,
+    Arc<K>: TableRow<'a> + Compare,
 {
     fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
-        let mut items = filter
-            .map(|filter| {
-                self.reader
-                    .state()
-                    .into_iter()
-                    .filter(|obj| obj.matches(filter.as_str()))
-                    .collect()
-            })
-            .unwrap_or(self.reader.state());
-
-        items.sort_by(TableRow::cmp);
-
-        items
+        Store::items(self, filter)
     }
 }
