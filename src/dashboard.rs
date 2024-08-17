@@ -10,10 +10,11 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::{
-    events::{Event, Keypress},
+    events::{Broadcast, Event, Keypress},
     identity::user::User,
     io::{backend::Backend, Handler, Writer},
     ssh::Controller,
+    widget::{pod, Widget},
 };
 
 pub struct Dashboard {
@@ -33,19 +34,6 @@ impl Dashboard {
     }
 }
 
-impl Dashboard {
-    fn render(&self, term: &mut Terminal<Backend>, root: &impl WidgetRef) -> Result<()> {
-        term.draw(|frame| {
-            let size = frame.size();
-
-            frame.render_widget(Clear, size);
-            frame.render_widget(root, size);
-        })?;
-
-        Ok(())
-    }
-}
-
 #[async_trait::async_trait]
 impl Handler for Dashboard {
     #[tracing::instrument(skip(self, reader, writer))]
@@ -58,16 +46,18 @@ impl Handler for Dashboard {
 
         let mut term = Terminal::new(backend)?;
 
-        let root = table::Table::new(self.controller.clone());
+        let mut root = pod::List::new(self.controller.client().clone());
 
         while let Some(ev) = reader.recv().await {
-            match ev {
-                Event::Keypress(Keypress::EndOfText) | Event::Shutdown => break,
-                Event::Resize(win) => {
-                    let mut size = window_size.lock().unwrap();
-                    *size = win;
+            if let Event::Resize(area) = ev {
+                let mut size = window_size.lock().unwrap();
+                *size = area;
+            }
+
+            match dispatch(&mut root, &mut term, &ev)? {
+                Broadcast::Exited => {
+                    break;
                 }
-                Event::Render => self.render(&mut term, &root)?,
                 _ => {}
             }
         }
@@ -82,4 +72,24 @@ impl std::fmt::Debug for Dashboard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Dashboard").finish()
     }
+}
+
+fn dispatch(widget: &mut pod::List, term: &mut Terminal<Backend>, ev: &Event) -> Result<Broadcast> {
+    match ev {
+        Event::Render => {}
+        Event::Keypress(key) => {
+            if matches!(key, Keypress::EndOfText) {
+                return Ok(Broadcast::Exited);
+            }
+
+            return widget.dispatch(ev);
+        }
+        _ => return Ok(Broadcast::Ignored),
+    }
+
+    term.draw(|frame| {
+        widget.draw(frame, frame.size());
+    })?;
+
+    Ok(Broadcast::Ignored)
 }

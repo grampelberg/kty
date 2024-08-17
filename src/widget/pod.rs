@@ -15,6 +15,7 @@ use ratatui::{
 };
 
 use super::{
+    debug::Fps,
     loading::Loading,
     log::Log,
     propagate,
@@ -33,6 +34,8 @@ pub struct List {
     table: Table,
 
     route: Vec<String>,
+
+    fps: Fps,
 }
 
 impl List {
@@ -46,6 +49,8 @@ impl List {
                 .constructor(Detail::from_store(client, pods.clone())),
 
             route: Vec::new(),
+
+            fps: Fps::default(),
         }
     }
 }
@@ -90,6 +95,12 @@ impl Widget for List {
         }
 
         self.table.render(frame, area, &self.pods);
+
+        let [_, area] =
+            Layout::horizontal([Constraint::Fill(0), Constraint::Length(10)]).areas(area);
+        let [_, area] = Layout::vertical([Constraint::Fill(0), Constraint::Length(10)]).areas(area);
+
+        self.fps.draw(frame, area);
     }
 }
 

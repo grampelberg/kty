@@ -87,7 +87,7 @@ impl Channel {
 
         // TODO: rendering ticks should be part of the dashboard itself.
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            let mut tick = tokio::time::interval(tokio::time::Duration::from_millis(100));
 
             loop {
                 tokio::select! {
