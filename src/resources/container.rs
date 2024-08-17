@@ -1,21 +1,15 @@
-use std::{borrow::Borrow, sync::Arc};
-
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::Utc;
 use k8s_openapi::api::core::v1::{
     self, ContainerState, ContainerStateRunning, ContainerStateTerminated, ContainerStateWaiting,
-    ContainerStatus, Pod, PodSpec, PodStatus,
+    ContainerStatus,
 };
-use kube::ResourceExt;
 use ratatui::{
     layout::Constraint,
     widgets::{Cell, Row},
 };
 
 use super::age::Age;
-use crate::widget::{
-    table::{Content, RowStyle},
-    TableRow,
-};
+use crate::widget::{table::RowStyle, TableRow};
 
 #[allow(clippy::module_name_repetitions)]
 pub trait ContainerExt {

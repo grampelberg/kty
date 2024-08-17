@@ -27,8 +27,8 @@ impl Text {
         self
     }
 
-    pub fn content(&self) -> &str {
-        self.content.as_str()
+    pub fn content(&self) -> String {
+        self.content.clone()
     }
 }
 

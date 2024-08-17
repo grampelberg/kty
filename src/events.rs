@@ -15,13 +15,14 @@ pub enum Broadcast {
     Raw(Box<dyn Raw>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Event {
     Keypress(Keypress),
     Resize(WindowSize),
     Goto(Vec<String>),
     Shutdown,
     Render,
+    Finished(Result<()>),
 }
 
 impl TryInto<Event> for &[u8] {

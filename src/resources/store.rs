@@ -86,13 +86,13 @@ where
         self.reader.state()
     }
 
-    pub fn get(&self, idx: usize, filter: Option<&str>) -> Option<Arc<K>> {
+    pub fn get(&self, idx: usize, filter: Option<String>) -> Option<Arc<K>> {
         filter
             .map(|filter| {
                 self.reader
                     .state()
                     .into_iter()
-                    .filter(|obj| obj.matches(filter))
+                    .filter(|obj| obj.matches(filter.as_str()))
                     .nth(idx)
             })
             .unwrap_or(self.reader.state().get(idx).cloned())
@@ -131,13 +131,13 @@ where
         + 'static,
     Arc<K>: TableRow<'a>,
 {
-    fn items(&self, filter: Option<&str>) -> Vec<impl TableRow<'a>> {
+    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
         filter
             .map(|filter| {
                 self.reader
                     .state()
                     .into_iter()
-                    .filter(|obj| obj.matches(filter))
+                    .filter(|obj| obj.matches(filter.as_str()))
                     .collect()
             })
             .unwrap_or(self.reader.state())

@@ -55,26 +55,21 @@ fn to_lines(txt: &str) -> Vec<Line> {
 // TODO:
 // - Need to cache the lines.
 // - See logs for performance improvements (eg. only render visible lines).
-pub struct Yaml<K>
-where
-    K: Resource + Serialize + Send + Sync,
-{
-    resource: Arc<K>,
+pub struct Yaml {
     txt: String,
     length: u16,
     area: Rect,
     position: (u16, u16),
 }
 
-impl<K> Yaml<K>
-where
-    K: Resource + Serialize + Send + Sync + 'static,
-{
-    pub fn new(resource: Arc<K>) -> Self {
+impl Yaml {
+    pub fn new<K>(resource: Arc<K>) -> Self
+    where
+        K: Resource + Serialize + Send + Sync + 'static,
+    {
         let txt = resource.to_yaml().unwrap();
 
         Self {
-            resource,
             #[allow(clippy::cast_possible_truncation)]
             length: LinesWithEndings::from(txt.as_str()).count() as u16,
             txt,
@@ -83,7 +78,10 @@ where
         }
     }
 
-    pub fn tab(name: String, resource: Arc<K>) -> Tab {
+    pub fn tab<K>(name: String, resource: Arc<K>) -> Tab
+    where
+        K: Resource + Serialize + Send + Sync + 'static,
+    {
         Tab::new(
             name,
             Box::new(move || Box::new(Self::new(resource.clone()))),
@@ -106,10 +104,7 @@ where
     }
 }
 
-impl<K> Widget for Yaml<K>
-where
-    K: Resource + Serialize + Send + Sync + 'static,
-{
+impl Widget for Yaml {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         let Event::Keypress(key) = event else {
             return Ok(Broadcast::Ignored);
