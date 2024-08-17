@@ -213,4 +213,8 @@ impl<'a> TableRow<'a> for Container {
             _ => style.unhealthy,
         })
     }
+
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name_any().cmp(other.name_any())
+    }
 }

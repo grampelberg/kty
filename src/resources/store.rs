@@ -132,7 +132,7 @@ where
     Arc<K>: TableRow<'a>,
 {
     fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
-        filter
+        let mut items = filter
             .map(|filter| {
                 self.reader
                     .state()
@@ -140,6 +140,10 @@ where
                     .filter(|obj| obj.matches(filter.as_str()))
                     .collect()
             })
-            .unwrap_or(self.reader.state())
+            .unwrap_or(self.reader.state());
+
+        items.sort_by(TableRow::cmp);
+
+        items
     }
 }
