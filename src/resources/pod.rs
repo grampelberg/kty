@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, error::Error, fmt::Display, sync::Arc};
+use std::{borrow::Borrow, cmp::Ordering, error::Error, fmt::Display, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
 use itertools::Itertools;
@@ -278,18 +278,31 @@ impl<'a> TableRow<'a> for Arc<Pod> {
 
     fn row(&self, style: &RowStyle) -> Row {
         Row::new(vec![
-            Cell::from(self.namespace().unwrap()),
-            Cell::from(self.name_any()),
-            Cell::from(self.ready()),
-            Cell::from(self.status().to_string()),
-            Cell::from(self.restarts()),
-            Cell::from(self.age().to_age()),
+            self.namespace().unwrap_or_default(),
+            self.name_any(),
+            self.ready(),
+            self.status().to_string(),
+            self.restarts(),
+            self.age().to_age(),
         ])
         .style(match self.status() {
             Phase::Pending | Phase::Running => style.normal,
             Phase::Succeeded => style.healthy,
             Phase::Unknown(_) => style.unhealthy,
         })
+    }
+
+    fn cmp(&self, other: &Self) -> Ordering {
+        let lhs = self
+            .namespace()
+            .unwrap_or_default()
+            .cmp(&other.namespace().unwrap_or_default());
+
+        if lhs != Ordering::Equal {
+            return lhs;
+        }
+
+        self.name_any().cmp(&other.name_any())
     }
 }
 

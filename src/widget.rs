@@ -27,6 +27,8 @@ pub trait TableRow<'a> {
 
     fn row(&self, style: &RowStyle) -> Row;
     fn header() -> Row<'a>;
+
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering;
 }
 
 pub trait Widget: Send {
