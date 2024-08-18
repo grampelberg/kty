@@ -3,23 +3,35 @@ mod resources;
 mod serve;
 mod users;
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use cata::{output::Format, Command, Container};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use clio::Output;
-use eyre::Result;
+use eyre::{eyre, Result};
+use tracing::metadata::LevelFilter;
 use tracing_error::ErrorLayer;
 use tracing_log::AsTrace;
 use tracing_subscriber::{filter::EnvFilter, prelude::*};
+
+// While tracing allows for you to get the global log filter
+// (`tracing::metadata::LevelFilter::current()`), the
+// `tracing_subscriber::registry::Registry` doesn't actually set it. The
+// `Subscriber` interface exposes an interface to check for `enabled()` but that
+// doesn't look at the individual layers of the registry. This effectively
+// copies how the global LevelFilter is set and allows other things to check
+// against it in a similar fashion.
+pub(crate) static LEVEL: OnceLock<LevelFilter> = OnceLock::new();
 
 #[derive(Parser, Container)]
 pub struct Root {
     #[command(subcommand)]
     command: RootCmd,
 
-    /// Verbosity level, pass extra v's to increase verbosity
+    /// Verbosity level, pass extra v's to increase verbosity. Note that this
+    /// controls the UI's verbosity in addition to the log's verbosity. Setting
+    /// to debug will show debug information in the UI.
     #[command(flatten)]
     verbosity: Verbosity,
 
@@ -42,6 +54,13 @@ enum RootCmd {
 
 impl Command for Root {
     fn pre_run(&self) -> Result<()> {
+        match LEVEL.set(self.verbosity.log_level_filter().as_trace()) {
+            Ok(_) => (),
+            Err(_) => {
+                return Err(eyre!("log level already set"));
+            }
+        }
+
         let filter = EnvFilter::builder()
             .with_default_directive(self.verbosity.log_level_filter().as_trace().into())
             .from_env_lossy();

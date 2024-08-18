@@ -37,7 +37,7 @@ pub struct Serve {
     client_id: String,
     #[clap(long, default_value = OID_CONFIG_URL)]
     openid_configuration: String,
-    /// Claim of the id_token to use as the user's ID.
+    /// Claim of the `id_token` to use as the user's ID.
     #[clap(long, default_value = "email")]
     claim: String,
 
