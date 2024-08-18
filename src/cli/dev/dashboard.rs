@@ -14,7 +14,7 @@ use tokio::{
 use tokio_util::bytes::Bytes;
 
 use crate::{
-    events::{Broadcast, Event, Keypress},
+    events::{Broadcast, Event, Input, Keypress},
     widget::{apex::Apex, Raw, Widget},
 };
 
@@ -57,7 +57,7 @@ fn poll_stdin(tx: &UnboundedSender<Bytes>) -> Result<()> {
     Ok(())
 }
 
-async fn events(tick: Duration, sender: UnboundedSender<Bytes>) -> Result<()> {
+async fn events(tick: Duration, sender: UnboundedSender<Event>) -> Result<()> {
     let mut tick = tokio::time::interval(tick);
 
     let (tx, mut rx) = unbounded_channel::<Bytes>();
@@ -74,10 +74,10 @@ async fn events(tick: Duration, sender: UnboundedSender<Bytes>) -> Result<()> {
                     break;
                 };
 
-                sender.send(message)?;
+                sender.send(message.try_into()?)?;
             }
             _ = tick.tick() => {
-                sender.send(Bytes::new())?;
+                sender.send(Event::Render)?;
             }
         }
     }
@@ -114,7 +114,7 @@ fn dispatch(mode: &mut Mode, term: &mut Terminal<impl Backend>, ev: &Event) -> R
 
     match ev {
         Event::Render => {}
-        Event::Keypress(key) => {
+        Event::Input(Input { key, .. }) => {
             if matches!(key, Keypress::EndOfText) {
                 return Ok(Broadcast::Exited);
             }
@@ -136,7 +136,7 @@ fn dispatch(mode: &mut Mode, term: &mut Terminal<impl Backend>, ev: &Event) -> R
 async fn raw(
     term: &mut Terminal<impl Backend>,
     raw_widget: &mut Box<dyn Raw>,
-    input: &mut UnboundedReceiver<Bytes>,
+    input: &mut UnboundedReceiver<Event>,
 ) -> Result<()> {
     term.clear()?;
     term.reset_cursor()?;
@@ -150,7 +150,7 @@ async fn raw(
     Ok(())
 }
 
-async fn ui<W>(route: Vec<String>, mut rx: UnboundedReceiver<Bytes>, tx: W) -> Result<()>
+async fn ui<W>(route: Vec<String>, mut rx: UnboundedReceiver<Event>, tx: W) -> Result<()>
 where
     W: std::io::Write + Send + 'static,
 {
@@ -158,9 +158,6 @@ where
 
     term.clear()?;
 
-    // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
-    // so that there's not a bunch of copying. Unfortunately, the Api interface
-    // doesn't like Arc<>.
     let mut root = Apex::new(kube::Client::try_default().await?);
 
     root.dispatch(&Event::Goto(route.clone()))?;
@@ -168,10 +165,8 @@ where
     let mut state = Mode::UI(Box::new(root));
 
     while let Some(ev) = rx.recv().await {
-        let event = ev.try_into()?;
-
         let result = match state {
-            Mode::UI(_) => dispatch(&mut state, &mut term, &event)?,
+            Mode::UI(_) => dispatch(&mut state, &mut term, &ev)?,
             Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
                 let result = raw(&mut term, raw_widget, &mut rx).await;
 
@@ -220,7 +215,7 @@ impl Command for Dashboard {
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(std::io::stderr(), crossterm::terminal::EnterAlternateScreen)?;
 
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Bytes>();
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Event>();
 
         let mut background = JoinSet::new();
 

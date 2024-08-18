@@ -35,15 +35,15 @@ impl Text {
 impl Widget for Text {
     // TODO: implement ctrl + a, ctrl + e, ctrl + k, ctrl + u
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        match event {
-            Event::Keypress(Keypress::Escape) => {
+        match event.key() {
+            Some(Keypress::Escape) => {
                 return Ok(Broadcast::Exited);
             }
-            Event::Keypress(Keypress::Printable(x)) => {
+            Some(Keypress::Printable(x)) => {
                 self.content.insert(self.pos as usize, *x);
                 self.pos = self.pos.saturating_add(1);
             }
-            Event::Keypress(Keypress::Backspace) => 'outer: {
+            Some(Keypress::Backspace) => 'outer: {
                 if self.content.is_empty() || self.pos == 0 {
                     break 'outer;
                 }
@@ -51,11 +51,11 @@ impl Widget for Text {
                 self.content.remove(self.pos as usize - 1);
                 self.pos = self.pos.saturating_sub(1);
             }
-            Event::Keypress(Keypress::CursorLeft) => {
+            Some(Keypress::CursorLeft) => {
                 self.pos = self.pos.saturating_sub(1);
             }
             #[allow(clippy::cast_possible_truncation)]
-            Event::Keypress(Keypress::CursorRight) => {
+            Some(Keypress::CursorRight) => {
                 self.pos = self
                     .pos
                     .saturating_add(1)

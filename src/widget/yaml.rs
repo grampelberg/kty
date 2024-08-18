@@ -106,7 +106,7 @@ impl Yaml {
 
 impl Widget for Yaml {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        let Event::Keypress(key) = event else {
+        let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 

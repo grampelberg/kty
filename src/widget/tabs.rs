@@ -76,7 +76,7 @@ impl Widget for TabbedView {
 
         propagate!(self.current.dispatch(event), {});
 
-        let Event::Keypress(key) = event else {
+        let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 

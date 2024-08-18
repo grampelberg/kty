@@ -35,6 +35,7 @@ impl Log {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
+        // TODO: this should be a function call.
         let task = tokio::spawn(async move {
             let mut stream = Api::<Pod>::namespaced(client, &pod.namespace().unwrap())
                 .log_stream(
@@ -108,7 +109,7 @@ impl Log {
 
 impl Widget for Log {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        let Event::Keypress(key) = event else {
+        let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 

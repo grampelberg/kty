@@ -22,7 +22,7 @@ use tokio::{
 use tokio_util::{bytes::Bytes, io::ReaderStream};
 
 use crate::{
-    events::{Broadcast, Event, Keypress},
+    events::{Broadcast, Event, Input, Keypress},
     resources::{
         container::{Container, ContainerExt},
         pod::{PodExt, StatusError, StatusExt},
@@ -128,8 +128,8 @@ impl Command {
             txt.content().to_string()
         };
 
-        match event {
-            Event::Keypress(Keypress::Enter) => {
+        match event.key() {
+            Some(Keypress::Enter) => {
                 self.state = CommandState::Attached;
 
                 Ok(Broadcast::Raw(Box::new(
@@ -141,7 +141,7 @@ impl Command {
                         .build()?,
                 )))
             }
-            Event::Keypress(Keypress::Escape) => Ok(Broadcast::Exited),
+            Some(Keypress::Escape) => Ok(Broadcast::Exited),
             _ => Ok(Broadcast::Ignored),
         }
     }
@@ -152,9 +152,9 @@ impl Command {
             return Ok(Broadcast::Ignored);
         }
 
-        match event {
+        match event.key() {
             // TODO: should handle scrolling inside the error message.
-            Event::Keypress(_) => {
+            Some(_) => {
                 self.state = CommandState::Input(Command::input(&self.container));
 
                 Ok(Broadcast::Consumed)
@@ -278,7 +278,7 @@ struct Exec {
 impl Raw for Exec {
     async fn start(
         &mut self,
-        stdin: &mut UnboundedReceiver<Bytes>,
+        stdin: &mut UnboundedReceiver<Event>,
         mut stdout: Pin<Box<dyn AsyncWrite + Send + Unpin>>,
     ) -> Result<()> {
         let mut proc = Api::<Pod>::namespaced(self.client.clone(), &self.pod.namespace().unwrap())
@@ -310,10 +310,14 @@ impl Raw for Exec {
                         break;
                     };
 
-                    input.write_all(&msg).await?;
+                    let Event::Input(incoming) = &msg else {
+                        continue;
+                    };
+
+                    input.write_all(incoming.into()).await?;
                     input.flush().await?;
 
-                    if matches!(msg.try_into()?, Event::Keypress(Keypress::Control('b'))) {
+                    if matches!(msg.key(), Some(Keypress::Control('b'))) {
                         break;
                     }
                 }
@@ -345,104 +349,3 @@ impl Raw for Exec {
         Ok(())
     }
 }
-
-// match err.downcast::<StatusError>() {
-//     Ok(status) => {
-//         info!(?status, "error executing command");
-//     }
-//     Err(err) => return Err(err),
-// }
-
-// write!(f, "{lines}")
-
-// fn handles(
-//     proc: &AttachedProcess,
-// ) -> (
-//     impl AsyncWriteExt + Unpin,
-//     impl AsyncReadExt + Unpin,
-//     impl AsyncReadExt + Unpin,
-// ) {
-//     let stdin = proc.stdin().ok_or(eyre!("stdin not available"))?;
-//     let stdout = proc.stdout().ok_or(eyre!("stdout not available"))?;
-//     let stderr = proc.stderr().ok_or(eyre!("stderr not available"))?;
-
-//     (stdin, stdout, stderr)
-// }
-
-// async fn exec(
-//     client: kube::Client,
-//     pod: Arc<Pod>,
-//     mut input: UnboundedReceiver<Bytes>,
-//     output: UnboundedSender<Bytes>,
-// ) -> Result<()> {
-//     let mut proc = Api::<Pod>::namespaced(client, &pod.namespace().unwrap())
-//         .exec(
-//             &pod.name_any(),
-//             vec!["/bin/bash"],
-//             &AttachParams {
-//                 stdin: true,
-//                 stdout: true,
-//                 stderr: false,
-//                 tty: true,
-//                 ..Default::default()
-//             },
-//         )
-//         .await?;
-
-//     let mut stdin = proc.stdin().ok_or(eyre!("stdin not available"))?;
-//     // let mut stderr = proc.stderr().ok_or(eyre!("stderr not available"))?;
-//     let mut stdout =
-//         tokio_util::io::ReaderStream::new(proc.stdout().ok_or(eyre!("stdout
-// not available"))?);
-
-//     loop {
-//         tokio::select! {
-//             message = input.recv() => {
-//                 if let Some(message) = message {
-//                     stdin.write_all(&message).await?;
-//                 } else {
-//                     break;
-//                 }
-//             }
-//             message = stdout.next() => {
-//                 info!("message: {:?}", message);
-
-//                 if let Some(Ok(message)) = message {
-//                     output.send(message).unwrap();
-//                 } else {
-//                     break;
-//                 }
-//             }
-//         }
-//     }
-
-//     proc.join().await?;
-
-//     Ok(())
-// }
-
-// pub struct Shell {
-//     client: kube::Client,
-//     pod: Arc<Pod>,
-// }
-
-// impl Shell {
-//     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
-//         Self { client, pod }
-//     }
-
-//     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
-//         Tab::new(
-//             name,
-//             Box::new(move || Box::new(Self::new(client.clone(),
-// pod.clone()))),         )
-//     }
-// }
-
-// impl Widget for Shell {
-//     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-//         Ok(Broadcast::Ignored)
-//     }
-
-//     fn draw(&mut self, frame: &mut Frame, area: Rect) {}
-// }

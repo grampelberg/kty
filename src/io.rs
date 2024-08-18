@@ -6,6 +6,7 @@ use derivative::Derivative;
 use eyre::{eyre, Result};
 use russh::{server::Handle, ChannelId, CryptoVec, Disconnect};
 use tokio::{sync::mpsc, task::JoinHandle};
+use tokio_util::bytes::Bytes;
 use tracing::error;
 
 use crate::events::Event;
