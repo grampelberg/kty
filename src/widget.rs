@@ -58,7 +58,7 @@ pub trait Raw: Send {
 
     async fn start(
         &mut self,
-        stdin: &mut UnboundedReceiver<Bytes>,
+        stdin: &mut UnboundedReceiver<Event>,
         mut stdout: Pin<Box<dyn AsyncWrite + Send + Unpin>>,
     ) -> Result<()>;
 }

@@ -1,7 +1,6 @@
 use std::str;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use eyre::{eyre, Result};
+use eyre::Result;
 use ratatui::backend::WindowSize;
 use tokio_util::bytes::Bytes;
 
@@ -17,7 +16,7 @@ pub enum Broadcast {
 
 #[derive(Debug)]
 pub enum Event {
-    Keypress(Keypress),
+    Input(Input),
     Resize(WindowSize),
     Goto(Vec<String>),
     Shutdown,
@@ -25,23 +24,39 @@ pub enum Event {
     Finished(Result<()>),
 }
 
-impl TryInto<Event> for &[u8] {
-    type Error = eyre::Report;
-
-    fn try_into(self) -> Result<Event> {
-        if self.is_empty() {
-            return Ok(Event::Render);
+impl Event {
+    pub fn key(&self) -> Option<&Keypress> {
+        match self {
+            Event::Input(Input { key, .. }) => Some(key),
+            _ => None,
         }
-
-        Ok(Event::Keypress(self.try_into()?))
     }
 }
 
-impl TryInto<Event> for Bytes {
-    type Error = eyre::Report;
+impl From<&[u8]> for Event {
+    fn from(data: &[u8]) -> Event {
+        Bytes::copy_from_slice(data).into()
+    }
+}
 
-    fn try_into(self) -> Result<Event> {
-        (&self[..]).try_into()
+impl From<Bytes> for Event {
+    fn from(data: Bytes) -> Event {
+        Event::Input(Input {
+            key: data.as_ref().try_into().unwrap(),
+            raw: data,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Input {
+    pub key: Keypress,
+    raw: Bytes,
+}
+
+impl<'a> Into<&'a [u8]> for &'a Input {
+    fn into(self) -> &'a [u8] {
+        self.raw.as_ref()
     }
 }
 
@@ -93,167 +108,67 @@ pub enum Keypress {
     CursorRight,
     CursorLeft,
     CursorHome,
+
+    Unknown(Bytes),
 }
 
-fn parse_escape(data: &[u8]) -> Result<Keypress> {
+fn parse_escape(data: &[u8]) -> Keypress {
     if data.len() == 1 {
-        return Ok(Keypress::Escape);
+        return Keypress::Escape;
     }
 
     if data[1] != b'[' {
-        return Err(eyre!("Unknown escape sequence"));
+        return Keypress::Unknown(Bytes::copy_from_slice(data));
     }
 
     match data[2..] {
-        [b'A'] => Ok(Keypress::CursorUp),
-        [b'B'] => Ok(Keypress::CursorDown),
-        [b'C'] => Ok(Keypress::CursorRight),
-        [b'D'] => Ok(Keypress::CursorLeft),
-        [b'H'] => Ok(Keypress::CursorHome),
-        _ => Err(eyre!("Unknown escape sequence")),
+        [b'A'] => Keypress::CursorUp,
+        [b'B'] => Keypress::CursorDown,
+        [b'C'] => Keypress::CursorRight,
+        [b'D'] => Keypress::CursorLeft,
+        [b'H'] => Keypress::CursorHome,
+        _ => Keypress::Unknown(Bytes::copy_from_slice(data)),
     }
 }
 
-impl TryInto<Keypress> for &[u8] {
-    type Error = eyre::Report;
-
-    fn try_into(self) -> Result<Keypress> {
-        if self.is_empty() {
-            return Err(eyre!("Empty keypress"));
-        }
-
-        match self[0] {
-            b'\x00' => Ok(Keypress::Null),
-            b'\x01' => Ok(Keypress::StartOfHeader),
-            b'\x02' => Ok(Keypress::Control('b')),
-            // b'\x02' => Ok(Keypress::StartOfText),
-            b'\x03' => Ok(Keypress::EndOfText),
-            b'\x04' => Ok(Keypress::EndOfTransmission),
-            b'\x05' => Ok(Keypress::Enquiry),
-            b'\x06' => Ok(Keypress::Control('f')),
-            // b'\x06' => Ok(Keypress::Acknowledge),
-            b'\x07' => Ok(Keypress::Bell),
-            b'\x08' => Ok(Keypress::Backspace),
-            b'\x09' => Ok(Keypress::HorizontalTab),
-            b'\x0A' | b'\x0D' => Ok(Keypress::Enter),
-            b'\x0B' => Ok(Keypress::VerticalTab),
-            b'\x0C' => Ok(Keypress::Formfeed),
-            b'\x0E' => Ok(Keypress::ShiftOut),
-            b'\x0F' => Ok(Keypress::ShiftIn),
-            b'\x10' => Ok(Keypress::DLE),
-            b'\x11' => Ok(Keypress::XON),
-            b'\x12' => Ok(Keypress::DC2),
-            b'\x13' => Ok(Keypress::XOFF),
-            b'\x14' => Ok(Keypress::DC4),
-            b'\x15' => Ok(Keypress::NAK),
-            b'\x16' => Ok(Keypress::SYN),
-            b'\x17' => Ok(Keypress::ETB),
-            b'\x18' => Ok(Keypress::Cancel),
-            b'\x19' => Ok(Keypress::EM),
-            b'\x1A' => Ok(Keypress::Substitute),
-            b'\x1b' => parse_escape(self),
-            b'\x1C' => Ok(Keypress::FS),
-            b'\x1D' => Ok(Keypress::GS),
-            b'\x1E' => Ok(Keypress::RS),
-            b'\x1F' => Ok(Keypress::US),
-            b'\x7f' => Ok(Keypress::Delete),
-            _ => Ok(Keypress::Printable(
-                str::from_utf8(self).unwrap().chars().next().unwrap(),
-            )),
-        }
-    }
-}
-
-impl TryInto<Keypress> for KeyEvent {
-    type Error = eyre::Report;
-
-    fn try_into(self) -> Result<Keypress> {
-        match self {
-            KeyEvent {
-                code: KeyCode::Null,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Null),
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Backspace),
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Enter),
-            KeyEvent {
-                code: KeyCode::Left,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::CursorLeft),
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::CursorRight),
-            KeyEvent {
-                code: KeyCode::Up,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::CursorUp),
-            KeyEvent {
-                code: KeyCode::Down,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::CursorDown),
-            KeyEvent {
-                code: KeyCode::Home,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::CursorHome),
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Delete),
-            KeyEvent {
-                code: KeyCode::Esc,
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Escape),
-            KeyEvent {
-                code: KeyCode::Char('b'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Control('b')),
-            KeyEvent {
-                code: KeyCode::Char('f'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Control('f')),
-            KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::EndOfText),
-            KeyEvent {
-                code: KeyCode::Char(c),
-                modifiers: _,
-                kind: _,
-                state: _,
-            } => Ok(Keypress::Printable(c)),
-            _ => Err(eyre!("Unknown keypress")),
+impl From<&[u8]> for Keypress {
+    fn from(data: &[u8]) -> Keypress {
+        match data[0] {
+            b'\x00' => Keypress::Null,
+            b'\x01' => Keypress::StartOfHeader,
+            b'\x02' => Keypress::Control('b'),
+            // b'\x02' => Keypress::StartOfText,
+            b'\x03' => Keypress::EndOfText,
+            b'\x04' => Keypress::EndOfTransmission,
+            b'\x05' => Keypress::Enquiry,
+            b'\x06' => Keypress::Control('f'),
+            // b'\x06' => Keypress::Acknowledge,
+            b'\x07' => Keypress::Bell,
+            b'\x08' => Keypress::Backspace,
+            b'\x09' => Keypress::HorizontalTab,
+            b'\x0A' | b'\x0D' => Keypress::Enter,
+            b'\x0B' => Keypress::VerticalTab,
+            b'\x0C' => Keypress::Formfeed,
+            b'\x0E' => Keypress::ShiftOut,
+            b'\x0F' => Keypress::ShiftIn,
+            b'\x10' => Keypress::DLE,
+            b'\x11' => Keypress::XON,
+            b'\x12' => Keypress::DC2,
+            b'\x13' => Keypress::XOFF,
+            b'\x14' => Keypress::DC4,
+            b'\x15' => Keypress::NAK,
+            b'\x16' => Keypress::SYN,
+            b'\x17' => Keypress::ETB,
+            b'\x18' => Keypress::Cancel,
+            b'\x19' => Keypress::EM,
+            b'\x1A' => Keypress::Substitute,
+            b'\x1b' => parse_escape(data),
+            b'\x1C' => Keypress::FS,
+            b'\x1D' => Keypress::GS,
+            b'\x1E' => Keypress::RS,
+            b'\x1F' => Keypress::US,
+            b'\x7f' => Keypress::Delete,
+            _ => Keypress::Printable(str::from_utf8(data).unwrap().chars().next().unwrap()),
         }
     }
 }

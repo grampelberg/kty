@@ -61,7 +61,7 @@ async fn event_loop(mut rx: UnboundedReceiver<Bytes>) {
                 tracing::info!("ev: {:?}", ev);
 
 
-                if matches!(ev, Event::Keypress(Keypress::EndOfText)) {
+                if matches!(ev.key(), Some(Keypress::EndOfText)) {
                     break;
                 }
             }

@@ -214,7 +214,7 @@ impl Table {
             State::Detail(_) => return Ok(Broadcast::Ignored),
         };
 
-        let Event::Keypress(key) = event else {
+        let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
