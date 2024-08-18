@@ -1,3 +1,4 @@
+pub mod apex;
 pub mod debug;
 pub mod input;
 pub mod loading;
@@ -35,7 +36,9 @@ pub trait Widget: Send {
         std::any::type_name::<Self>()
     }
 
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
+    fn dispatch(&mut self, _event: &Event) -> Result<Broadcast> {
+        Ok(Broadcast::Ignored)
+    }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect);
 }

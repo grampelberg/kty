@@ -15,10 +15,7 @@ use tokio_util::bytes::Bytes;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
-    widget::{
-        pod::{self},
-        Raw, Widget,
-    },
+    widget::{apex::Apex, Raw, Widget},
 };
 
 #[derive(Parser, Container)]
@@ -130,9 +127,7 @@ fn dispatch(mode: &mut Mode, term: &mut Terminal<impl Backend>, ev: &Event) -> R
     }
 
     term.draw(|frame| {
-        let area = frame.size();
-
-        widget.draw(frame, area);
+        widget.draw(frame, frame.size());
     })?;
 
     Ok(Broadcast::Ignored)
@@ -166,7 +161,8 @@ where
     // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
     // so that there's not a bunch of copying. Unfortunately, the Api interface
     // doesn't like Arc<>.
-    let mut root = pod::List::new(kube::Client::try_default().await?);
+    let mut root = Apex::new(kube::Client::try_default().await?);
+
     root.dispatch(&Event::Goto(route.clone()))?;
 
     let mut state = Mode::UI(Box::new(root));

@@ -3,10 +3,7 @@ mod table;
 use std::sync::Arc;
 
 use eyre::Result;
-use ratatui::{
-    widgets::{Clear, WidgetRef},
-    Terminal,
-};
+use ratatui::Terminal;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -14,7 +11,7 @@ use crate::{
     identity::user::User,
     io::{backend::Backend, Handler, Writer},
     ssh::Controller,
-    widget::{pod, Widget},
+    widget::{apex::Apex, Widget},
 };
 
 pub struct Dashboard {
@@ -43,10 +40,8 @@ impl Handler for Dashboard {
         writer: Writer,
     ) -> Result<()> {
         let (backend, window_size) = Backend::with_size(writer);
-
         let mut term = Terminal::new(backend)?;
-
-        let mut root = pod::List::new(self.controller.client().clone());
+        let mut root = Apex::new(self.controller.client().clone());
 
         while let Some(ev) = reader.recv().await {
             if let Event::Resize(area) = ev {
@@ -54,11 +49,8 @@ impl Handler for Dashboard {
                 *size = area;
             }
 
-            match dispatch(&mut root, &mut term, &ev)? {
-                Broadcast::Exited => {
-                    break;
-                }
-                _ => {}
+            if matches!(dispatch(&mut root, &mut term, &ev)?, Broadcast::Exited) {
+                break;
             }
         }
 
@@ -74,7 +66,11 @@ impl std::fmt::Debug for Dashboard {
     }
 }
 
-fn dispatch(widget: &mut pod::List, term: &mut Terminal<Backend>, ev: &Event) -> Result<Broadcast> {
+fn dispatch(
+    widget: &mut dyn Widget,
+    term: &mut Terminal<Backend>,
+    ev: &Event,
+) -> Result<Broadcast> {
     match ev {
         Event::Render => {}
         Event::Keypress(key) => {
