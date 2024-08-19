@@ -1,6 +1,6 @@
 mod table;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use eyre::{eyre, Result};
 use ratatui::{backend::Backend as BackendTrait, Terminal};
@@ -13,15 +13,12 @@ use tokio::{
 
 use crate::{
     events::{Broadcast, Event, Input, Keypress},
-    identity::user::User,
-    io::{backend::Backend, Channel},
-    ssh::Controller,
+    io::{backend::Backend, Writer},
     widget::{apex::Apex, Raw, Widget},
 };
 
 pub struct Dashboard {
-    controller: Arc<Controller>,
-    user: User,
+    client: kube::Client,
 
     task: Option<JoinHandle<Result<()>>>,
     tx: Option<UnboundedSender<Event>>,
@@ -30,10 +27,9 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
-    pub fn new(controller: Arc<Controller>, user: User) -> Self {
+    pub fn new(client: kube::Client) -> Self {
         Self {
-            controller,
-            user,
+            client,
             task: None,
             tx: None,
 
@@ -47,7 +43,7 @@ impl Dashboard {
         self
     }
 
-    pub fn start(&mut self, channel: Channel) -> Result<()> {
+    pub fn start(&mut self, channel: impl Writer) -> Result<()> {
         if self.task.is_some() {
             return Err(eyre!("dashboard already started"));
         }
@@ -56,7 +52,7 @@ impl Dashboard {
         self.tx = Some(tx.clone());
 
         self.task = Some(tokio::spawn(run(
-            self.controller.client().clone(),
+            self.client.clone(),
             self.tick,
             rx,
             channel,
@@ -117,12 +113,11 @@ impl Mode {
     }
 }
 
-// TODO: use this instead of `ui()` in the dashboard command.
 async fn run(
     client: kube::Client,
     tick: Duration,
     mut rx: UnboundedReceiver<Event>,
-    channel: Channel,
+    channel: impl Writer,
 ) -> Result<()> {
     let mut interval = tokio::time::interval(tick);
     // Because we pause the render loop while rendering a raw widget, the ticks can
@@ -130,7 +125,7 @@ async fn run(
     // extra CPU), it causes `Handle.data()` to deadlock if called too quickly.
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let (backend, window_size) = Backend::with_size(channel.writer());
+    let (backend, window_size) = Backend::with_size(channel.blocking_writer());
     let mut term = Terminal::new(backend)?;
 
     // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
@@ -162,7 +157,8 @@ async fn run(
         let result = match state {
             Mode::UI(ref mut widget) => draw_ui(widget, &mut term, &ev)?,
             Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
-                let raw_result = draw_raw(raw_widget, &mut term, &mut rx, channel.writer()).await;
+                let raw_result =
+                    draw_raw(raw_widget, &mut term, &mut rx, channel.async_writer()).await;
 
                 let result = current_widget.dispatch(&Event::Finished(raw_result))?;
 
@@ -188,11 +184,14 @@ async fn run(
     Ok(())
 }
 
-fn draw_ui(
+fn draw_ui<W>(
     widget: &mut Box<dyn Widget>,
-    term: &mut Terminal<Backend>,
+    term: &mut Terminal<Backend<W>>,
     ev: &Event,
-) -> Result<Broadcast> {
+) -> Result<Broadcast>
+where
+    W: std::io::Write + Send,
+{
     let result = match ev {
         Event::Input(Input { key, .. }) => {
             if matches!(key, Keypress::EndOfText) {

@@ -299,11 +299,11 @@ impl server::Handler for Session {
         modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
     ) -> Result<()> {
-        let State::ChannelOpen(user) = self.state.borrow_mut() else {
+        let State::ChannelOpen(_) = self.state.borrow_mut() else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let mut dashboard = Dashboard::new(self.controller.clone(), user.clone());
+        let mut dashboard = Dashboard::new(self.controller.client().clone());
 
         dashboard.start(Channel::new(id, session.handle().clone()))?;
 
