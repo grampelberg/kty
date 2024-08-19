@@ -1,6 +1,7 @@
 pub mod backend;
 
 use std::{
+    io::Write,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -25,12 +26,19 @@ impl Channel {
             handle: Arc::new(handle),
         }
     }
+}
 
-    pub fn writer(&self) -> Writer {
-        Writer::new(self.id, self.handle.clone())
+#[async_trait::async_trait]
+impl Writer for Channel {
+    fn blocking_writer(&self) -> impl Write {
+        SshWriter::new(self.id, self.handle.clone())
     }
 
-    pub async fn shutdown(&self, msg: String) -> Result<()> {
+    fn async_writer(&self) -> impl AsyncWrite + Send + Unpin + 'static {
+        SshWriter::new(self.id, self.handle.clone())
+    }
+
+    async fn shutdown(&self, msg: String) -> Result<()> {
         self.handle
             .disconnect(Disconnect::ByApplication, msg, String::new())
             .await?;
@@ -39,7 +47,7 @@ impl Channel {
     }
 }
 
-pub struct Writer {
+pub struct SshWriter {
     id: ChannelId,
     handle: Arc<Handle>,
     buf: CryptoVec,
@@ -47,7 +55,7 @@ pub struct Writer {
     active_send: Option<BoxFuture<'static, Result<(), CryptoVec>>>,
 }
 
-impl Writer {
+impl SshWriter {
     pub fn new(id: ChannelId, handle: Arc<Handle>) -> Self {
         Self {
             id,
@@ -58,7 +66,7 @@ impl Writer {
     }
 }
 
-impl std::io::Write for Writer {
+impl std::io::Write for SshWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.buf.extend(buf);
 
@@ -80,7 +88,7 @@ impl std::io::Write for Writer {
     }
 }
 
-impl AsyncWrite for Writer {
+impl AsyncWrite for SshWriter {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -133,5 +141,15 @@ impl AsyncWrite for Writer {
 
     fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Poll::Ready(Ok(()))
+    }
+}
+
+#[async_trait::async_trait]
+pub trait Writer: Send + Sync + 'static {
+    fn async_writer(&self) -> impl AsyncWrite + Send + Unpin + 'static;
+    fn blocking_writer(&self) -> impl Write + Send;
+
+    async fn shutdown(&self, _msg: String) -> Result<()> {
+        Ok(())
     }
 }

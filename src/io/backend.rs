@@ -9,20 +9,24 @@ use ratatui::{
     layout::{Rect, Size},
 };
 
-use super::Writer;
-
 /// PTY based wrapper for the crossterm backend.
 ///
 /// Crossterm always looks for the size on the server side, this allows for
 /// setting of the size from the client via resize and PTY requests.
-pub struct Backend {
-    crossterm: CrosstermBackend<Writer>,
+pub struct Backend<W>
+where
+    W: std::io::Write + Send,
+{
+    crossterm: CrosstermBackend<W>,
 
     size: Arc<Mutex<WindowSize>>,
 }
 
-impl Backend {
-    pub fn with_size(writer: Writer) -> (Self, Arc<Mutex<WindowSize>>) {
+impl<W> Backend<W>
+where
+    W: std::io::Write + Send,
+{
+    pub fn with_size(writer: W) -> (Self, Arc<Mutex<WindowSize>>) {
         let size = Arc::new(Mutex::new(WindowSize {
             columns_rows: Size::default(),
             pixels: Size::default(),
@@ -38,7 +42,10 @@ impl Backend {
     }
 }
 
-impl BackendTrait for Backend {
+impl<W> BackendTrait for Backend<W>
+where
+    W: std::io::Write + Send,
+{
     fn draw<'a, I>(&mut self, items: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
