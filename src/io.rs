@@ -1,28 +1,59 @@
 pub mod backend;
 
-use std::borrow::Borrow;
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-use derivative::Derivative;
 use eyre::{eyre, Result};
+use futures::{future::BoxFuture, FutureExt};
 use russh::{server::Handle, ChannelId, CryptoVec, Disconnect};
-use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_util::bytes::Bytes;
+use tokio::io::AsyncWrite;
 use tracing::error;
 
-use crate::events::Event;
+#[derive(Clone)]
+pub struct Channel {
+    id: ChannelId,
+    handle: Arc<Handle>,
+}
+
+impl Channel {
+    pub fn new(id: ChannelId, handle: Handle) -> Self {
+        Self {
+            id,
+            handle: Arc::new(handle),
+        }
+    }
+
+    pub fn writer(&self) -> Writer {
+        Writer::new(self.id, self.handle.clone())
+    }
+
+    pub async fn shutdown(&self, msg: String) -> Result<()> {
+        self.handle
+            .disconnect(Disconnect::ByApplication, msg, String::new())
+            .await?;
+
+        Ok(())
+    }
+}
 
 pub struct Writer {
     id: ChannelId,
-    handle: Handle,
+    handle: Arc<Handle>,
     buf: CryptoVec,
+
+    active_send: Option<BoxFuture<'static, Result<(), CryptoVec>>>,
 }
 
 impl Writer {
-    pub fn new(id: ChannelId, handle: Handle) -> Self {
+    pub fn new(id: ChannelId, handle: Arc<Handle>) -> Self {
         Self {
             id,
             handle,
             buf: CryptoVec::new(),
+            active_send: None,
         }
     }
 }
@@ -38,111 +69,69 @@ impl std::io::Write for Writer {
         let buf = self.buf.clone();
         self.buf.clear();
 
-        futures::executor::block_on(async move { self.handle.borrow().data(self.id, buf).await })
-            .map_err(|e| {
+        futures::executor::block_on(async move { self.handle.data(self.id, buf).await }).map_err(
+            |e| {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     eyre!("error writing to channel: {:?}", e),
                 )
-            })
+            },
+        )
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct Channel {
-    id: ChannelId,
-    #[derivative(Debug = "ignore")]
-    handle: Handle,
-    task: Option<JoinHandle<Result<()>>>,
-    tx: Option<mpsc::UnboundedSender<Event>>,
-}
+impl AsyncWrite for Writer {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        #[allow(clippy::single_match_else)]
+        let fut = match self.active_send {
+            Some(ref mut fut) => fut,
+            None => {
+                let id = self.id;
+                let handle = self.handle.clone();
 
-impl Channel {
-    pub fn new(id: ChannelId, handle: Handle) -> Self {
-        Self {
-            id,
-            handle,
-            task: None,
-            tx: None,
-        }
-    }
+                let buf = CryptoVec::from_slice(buf);
+                let fut = async move {
+                    handle.data(id, buf).await?;
 
-    pub fn writer(&self) -> Writer {
-        Writer::new(self.id, self.handle.clone())
-    }
+                    Ok(())
+                }
+                .boxed();
 
-    pub fn start<H>(&mut self, handler: H) -> Result<()>
-    where
-        H: Handler + Send + 'static,
-    {
-        if self.task.is_some() {
-            return Err(eyre!("channel is already started"));
-        }
+                self.active_send = Some(fut);
 
-        let (tx, rx) = mpsc::unbounded_channel::<Event>();
-        self.tx = Some(tx.clone());
+                self.active_send.as_mut().unwrap()
+            }
+        };
 
-        let handle = self.handle.clone();
-        let writer = self.writer();
+        match fut.poll_unpin(cx) {
+            Poll::Ready(result) => {
+                self.active_send = None;
 
-        // TODO: rendering ticks should be part of the dashboard itself.
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(tokio::time::Duration::from_millis(100));
+                match result {
+                    Ok(()) => Poll::Ready(Ok(buf.len())),
+                    Err(e) => {
+                        error!("error writing to channel: {:?}", e);
 
-            loop {
-                tokio::select! {
-                    _ = tx.closed() => break,
-                    _ = tick.tick() => tx.send(Event::Render).unwrap_or_else(|e| error!("error sending render: {:?}", e)),
+                        Poll::Ready(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            eyre!("error writing to channel: {:?}", e),
+                        )))
+                    }
                 }
             }
-        });
-
-        self.task = Some(tokio::spawn(async move {
-            let reason = match handler.start(rx, writer).await {
-                Ok(()) => "closed".into(),
-                Err(e) => {
-                    error!("handler exited with error: {:?}", e);
-
-                    "unexpected error".into()
-                }
-            };
-
-            handle
-                .disconnect(Disconnect::ByApplication, reason, String::new())
-                .await?;
-
-            Ok(())
-        }));
-
-        Ok(())
-    }
-
-    pub fn send(&self, ev: Event) -> Result<()> {
-        if let Some(tx) = self.tx.as_ref() {
-            tx.send(ev)?;
-        } else {
-            return Err(eyre!("channel is not started"));
+            Poll::Pending => Poll::Pending,
         }
-
-        Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
-        self.send(Event::Shutdown)?;
-
-        self.tx = None;
-
-        // TODO: have some kind of timeout.
-        if let Some(task) = self.task.take() {
-            return task.await?;
-        }
-
-        Ok(())
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
-}
 
-#[async_trait::async_trait]
-pub trait Handler {
-    async fn start(&self, rx: mpsc::UnboundedReceiver<Event>, tx: Writer) -> Result<()>;
+    fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
 }

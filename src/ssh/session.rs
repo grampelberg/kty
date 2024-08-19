@@ -1,5 +1,5 @@
 use std::{
-    borrow::{Borrow, Cow},
+    borrow::{Borrow, BorrowMut, Cow},
     str,
     sync::Arc,
 };
@@ -7,6 +7,7 @@ use std::{
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
 use ratatui::{backend::WindowSize, layout::Size};
+use replace_with::replace_with_or_abort;
 use russh::{
     keys::key::PublicKey,
     server::{self, Auth, Response},
@@ -29,7 +30,8 @@ pub enum State {
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     Authenticated(User, String),
-    PtyStarted(Channel),
+    ChannelOpen(User),
+    PtyStarted(Dashboard),
 }
 
 impl State {
@@ -67,8 +69,15 @@ impl State {
         *self = State::Authenticated(user, method);
     }
 
-    fn pty_started(&mut self, channel: Channel) {
-        *self = State::PtyStarted(channel);
+    fn channel_opened(&mut self) {
+        replace_with_or_abort(self, |self_| match self_ {
+            State::Authenticated(user, _) => State::ChannelOpen(user),
+            _ => self_,
+        });
+    }
+
+    fn pty_started(&mut self, dashboard: Dashboard) {
+        *self = State::PtyStarted(dashboard);
     }
 }
 
@@ -229,17 +238,19 @@ impl server::Handler for Session {
         _: russh::Channel<server::Msg>,
         _: &mut server::Session,
     ) -> Result<bool> {
+        self.state.channel_opened();
+
         Ok(true)
     }
 
     #[tracing::instrument(skip(self, data))]
     async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
-        let State::PtyStarted(channel) = &self.state else {
+        let State::PtyStarted(dashboard) = &self.state else {
             // TODO: this should probably be a debug statement.
             return Err(eyre!("Dashboard not started"));
         };
 
-        channel.send(data.try_into()?)
+        dashboard.send(data.into())
     }
 
     async fn window_change_request(
@@ -251,9 +262,9 @@ impl server::Handler for Session {
         py: u32,
         _: &mut server::Session,
     ) -> Result<(), Self::Error> {
-        if let State::PtyStarted(channel) = &self.state {
+        if let State::PtyStarted(dashboard) = &self.state {
             #[allow(clippy::cast_possible_truncation)]
-            channel.send(Event::Resize(WindowSize {
+            dashboard.send(Event::Resize(WindowSize {
                 columns_rows: Size {
                     width: cx as u16,
                     height: cy as u16,
@@ -269,8 +280,8 @@ impl server::Handler for Session {
     }
 
     async fn channel_close(&mut self, _: ChannelId, _: &mut server::Session) -> Result<()> {
-        if let State::PtyStarted(channel) = &mut self.state {
-            channel.stop().await?;
+        if let State::PtyStarted(dashboard) = &mut self.state {
+            dashboard.stop().await?;
         };
 
         Ok(())
@@ -288,15 +299,16 @@ impl server::Handler for Session {
         modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
     ) -> Result<()> {
-        let State::Authenticated(user, _) = &self.state else {
+        let State::ChannelOpen(user) = self.state.borrow_mut() else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let dashboard = Dashboard::new(self.controller.clone(), user.clone());
-        let mut channel = Channel::new(id, session.handle().clone());
-        channel.start(dashboard)?;
+        let mut dashboard = Dashboard::new(self.controller.clone(), user.clone());
+
+        dashboard.start(Channel::new(id, session.handle().clone()))?;
+
         #[allow(clippy::cast_possible_truncation)]
-        channel.send(Event::Resize(WindowSize {
+        dashboard.send(Event::Resize(WindowSize {
             columns_rows: Size {
                 width: cx as u16,
                 height: cy as u16,
@@ -307,7 +319,7 @@ impl server::Handler for Session {
             },
         }))?;
 
-        self.state.pty_started(channel);
+        self.state.pty_started(dashboard);
 
         Ok(())
     }

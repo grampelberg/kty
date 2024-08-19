@@ -32,7 +32,6 @@ crossterm = { version = "0.28.1", default-features = false, features = [
     "event-stream",
     "events",
 ] }
-derivative = "2.2.0"
 derive_builder = { version = "0.20.0", features = ["clippy"] }
 either = "1.13.0"
 eyre = "0.6.12"
