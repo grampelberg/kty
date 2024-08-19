@@ -19,10 +19,10 @@ use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::mpsc::UnboundedReceiver,
 };
-use tokio_util::{bytes::Bytes, io::ReaderStream};
+use tokio_util::io::ReaderStream;
 
 use crate::{
-    events::{Broadcast, Event, Input, Keypress},
+    events::{Broadcast, Event, Keypress},
     resources::{
         container::{Container, ContainerExt},
         pod::{PodExt, StatusError, StatusExt},
@@ -296,13 +296,21 @@ impl Raw for Exec {
             )
             .await?;
 
-        let status = proc.take_status().ok_or(eyre!("status not available"))?;
+        let status = proc.take_status().ok_or(eyre!(
+            "status not
+available"
+        ))?;
 
-        let mut output = ReaderStream::new(proc.stdout().ok_or(eyre!("stdout not available"))?);
-        let mut input = proc.stdin().ok_or(eyre!("stdin not available"))?;
+        let mut output = ReaderStream::new(proc.stdout().ok_or(eyre!(
+            "stdout
+not available"
+        ))?);
+        let mut input = proc.stdin().ok_or(eyre!(
+            "stdin
+not available"
+        ))?;
 
         // TODO: handle resize events.
-
         loop {
             tokio::select! {
                 msg = stdin.recv() => {
@@ -328,7 +336,6 @@ impl Raw for Exec {
 
                     stdout.write_all(&msg?).await?;
                     stdout.flush().await?;
-
                 }
             }
         }

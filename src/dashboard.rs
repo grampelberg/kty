@@ -1,20 +1,20 @@
 mod table;
 
-use std::{io::Read, iter::Iterator, os::fd::AsRawFd, pin::Pin, sync::Arc};
+use std::{sync::Arc, time::Duration};
 
 use eyre::{eyre, Result};
 use ratatui::{backend::Backend as BackendTrait, Terminal};
 use replace_with::replace_with_or_abort;
-use tokio::sync::{
-    mpsc,
-    mpsc::{UnboundedReceiver, UnboundedSender},
+use tokio::{
+    io::AsyncWrite,
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    task::JoinHandle,
 };
-use tokio_util::bytes::Bytes;
 
 use crate::{
     events::{Broadcast, Event, Input, Keypress},
     identity::user::User,
-    io::{backend::Backend, Handler, Writer},
+    io::{backend::Backend, Channel},
     ssh::Controller,
     widget::{apex::Apex, Raw, Widget},
 };
@@ -22,20 +22,81 @@ use crate::{
 pub struct Dashboard {
     controller: Arc<Controller>,
     user: User,
-}
 
-fn reset_terminal(term: &mut Terminal<Backend>) -> Result<()> {
-    term.show_cursor()?;
+    task: Option<JoinHandle<Result<()>>>,
+    tx: Option<UnboundedSender<Event>>,
 
-    Ok(())
+    tick: Duration,
 }
 
 impl Dashboard {
     pub fn new(controller: Arc<Controller>, user: User) -> Self {
-        Self { controller, user }
+        Self {
+            controller,
+            user,
+            task: None,
+            tx: None,
+
+            tick: Duration::from_millis(100),
+        }
+    }
+
+    pub fn with_fps(mut self, fps: u64) -> Self {
+        self.tick = Duration::from_millis(1000 / fps);
+
+        self
+    }
+
+    pub fn start(&mut self, channel: Channel) -> Result<()> {
+        if self.task.is_some() {
+            return Err(eyre!("dashboard already started"));
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.tx = Some(tx.clone());
+
+        self.task = Some(tokio::spawn(run(
+            self.controller.client().clone(),
+            self.tick,
+            rx,
+            channel,
+        )));
+
+        Ok(())
+    }
+
+    pub fn send(&self, ev: Event) -> Result<()> {
+        let Some(tx) = &self.tx else {
+            return Err(eyre!("channel not started"));
+        };
+
+        tx.send(ev)?;
+
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) -> Result<()> {
+        if self.tx.is_some() {
+            self.send(Event::Shutdown)?;
+
+            self.tx = None;
+        }
+
+        if let Some(task) = self.task.take() {
+            task.await?
+        } else {
+            Ok(())
+        }
     }
 }
 
+impl std::fmt::Debug for Dashboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dashboard").finish()
+    }
+}
+
+#[derive(Debug)]
 enum Mode {
     UI(Box<dyn Widget>),
     Raw(Box<dyn Raw>, Box<dyn Widget>),
@@ -57,101 +118,109 @@ impl Mode {
 }
 
 // TODO: use this instead of `ui()` in the dashboard command.
-#[async_trait::async_trait]
-impl Handler for Dashboard {
-    #[tracing::instrument(skip(self, reader, writer))]
-    async fn start(
-        &self,
-        mut reader: mpsc::UnboundedReceiver<Event>,
-        writer: Writer,
-    ) -> Result<()> {
-        let (backend, window_size) = Backend::with_size(writer);
-        let mut term = Terminal::new(backend)?;
+async fn run(
+    client: kube::Client,
+    tick: Duration,
+    mut rx: UnboundedReceiver<Event>,
+    channel: Channel,
+) -> Result<()> {
+    let mut interval = tokio::time::interval(tick);
+    // Because we pause the render loop while rendering a raw widget, the ticks can
+    // really back up. While this wouldn't necessarily be a bad thing (just some
+    // extra CPU), it causes `Handle.data()` to deadlock if called too quickly.
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-        // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
-        // so that there's not a bunch of copying. Unfortunately, the Api interface
-        // doesn't like Arc<>.
-        let mut root = Apex::new(self.controller.client().clone());
+    let (backend, window_size) = Backend::with_size(channel.writer());
+    let mut term = Terminal::new(backend)?;
 
-        let mut state = Mode::UI(Box::new(root));
+    // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
+    // so that there's not a bunch of copying. Unfortunately, the Api interface
+    // doesn't like Arc<>.
+    let mut state = Mode::UI(Box::new(Apex::new(client)));
 
-        while let Some(ev) = reader.recv().await {
-            if let Event::Resize(area) = ev {
-                let mut size = window_size.lock().unwrap();
-                *size = area;
-            }
-
-            let result = match state {
-                Mode::UI(_) => dispatch(&mut state, &mut term, &ev)?,
-                Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
-                    let result = raw(&mut term, raw_widget, &mut reader).await;
-
-                    current_widget.dispatch(&Event::Finished(result))?;
-
-                    state.ui();
-
-                    Broadcast::Ignored
-                }
-            };
-
-            match result {
-                Broadcast::Exited => {
+    loop {
+        // It is important that this doesn't go *too* fast. Repeatedly writing to the
+        // channel causes a deadlock for some reason that I've been unable to decipher.
+        let ev = tokio::select! {
+            ev = rx.recv() => {
+                let Some(ev) = ev else {
                     break;
-                }
-                Broadcast::Raw(widget) => {
-                    state.raw(widget);
-                }
-                _ => {}
+                };
+
+                ev
             }
+            _ = interval.tick() => {
+                Event::Render
+            }
+        };
+
+        if let Event::Resize(area) = ev {
+            let mut size = window_size.lock().unwrap();
+            *size = area;
         }
 
-        reset_terminal(&mut term)?;
+        let result = match state {
+            Mode::UI(ref mut widget) => draw_ui(widget, &mut term, &ev)?,
+            Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
+                let raw_result = draw_raw(raw_widget, &mut term, &mut rx, channel.writer()).await;
 
-        Ok(())
+                let result = current_widget.dispatch(&Event::Finished(raw_result))?;
+
+                state.ui();
+
+                result
+            }
+        };
+
+        match result {
+            Broadcast::Exited => {
+                break;
+            }
+            Broadcast::Raw(widget) => {
+                state.raw(widget);
+            }
+            _ => {}
+        }
     }
+
+    channel.shutdown("exiting...".to_string()).await?;
+
+    Ok(())
 }
 
-impl std::fmt::Debug for Dashboard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Dashboard").finish()
-    }
-}
-
-fn dispatch(mode: &mut Mode, term: &mut Terminal<Backend>, ev: &Event) -> Result<Broadcast> {
-    let Mode::UI(widget) = mode else {
-        return Err(eyre!("expected UI mode"));
-    };
-
-    match ev {
-        Event::Render => {}
+fn draw_ui(
+    widget: &mut Box<dyn Widget>,
+    term: &mut Terminal<Backend>,
+    ev: &Event,
+) -> Result<Broadcast> {
+    let result = match ev {
         Event::Input(Input { key, .. }) => {
             if matches!(key, Keypress::EndOfText) {
                 return Ok(Broadcast::Exited);
             }
 
-            return widget.dispatch(ev);
+            widget.dispatch(ev)
         }
-        _ => return Ok(Broadcast::Ignored),
-    }
+        _ => Ok(Broadcast::Ignored),
+    };
 
     term.draw(|frame| {
         widget.draw(frame, frame.size());
     })?;
 
-    Ok(Broadcast::Ignored)
+    result
 }
 
-async fn raw(
-    term: &mut Terminal<impl BackendTrait>,
+async fn draw_raw(
     raw_widget: &mut Box<dyn Raw>,
+    term: &mut Terminal<impl BackendTrait>,
     input: &mut UnboundedReceiver<Event>,
+    output: impl AsyncWrite + Unpin + Send + 'static,
 ) -> Result<()> {
     term.clear()?;
     term.reset_cursor()?;
 
-    // raw_widget
-    //     .start(input, Pin::new(Box::new(tokio::io::stdout())))
-    //     .await?;
+    raw_widget.start(input, Box::pin(output)).await?;
 
     term.clear()?;
 

@@ -17,7 +17,6 @@ use ratatui::{
     Frame,
 };
 use tokio::{io::AsyncWrite, sync::mpsc::UnboundedReceiver};
-use tokio_util::bytes::Bytes;
 
 use crate::{
     events::{Broadcast, Event},
