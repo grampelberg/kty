@@ -1,5 +1,80 @@
 # kuberift
 
+## Identity (Authentication)
+
+Access is managed via k8s' RBAC system. This is managed with `User` and `Group`
+subjects in role bindings. Kuberift impersonates a user with optional groups.
+Authorization is then managed by k8s itself.
+
+There are two ways for an incoming SSH session to get a user identity:
+
+- OpenID - If the user does not have an authorized public key, the SSH session
+  prompts with an open id flow. When that flow is successful, the returned token
+  is mapped to a k8s identity. By default, this is the `email` claim in the
+  identity token. If you would like to map different claims and/or add groups,
+  take a look at the server configuration.
+- Public Key - By default, once a user has been authenticated with open id, they
+  will have a public key. This will contain the user and group information
+  extracted from the identity token. If you would like to skip OpenID entirely,
+  you can create `Key` resources, the `kuberift users key` can be used to do
+  this as an alternative to `kubectl`.
+
+To validate that a user has access, you can use the `kuberift users check`
+command. This is a great way to debug why users are not being allowed to
+connect.
+
+```bash
+kuberift users check foo@bar.com
+```
+
+## Authorization
+
+To be authorized, either the user from the identity or one of the groups that
+user is a member of need to have role bindings added to the cluster. The
+`kuberift users grant` command is one way to go about this, but it is purposely
+naive. To do something more flexible, you can check out `kubectl`:
+
+```bash
+kubectl create clusterrolebinding foo-bar-com --clusterrole=<my-role> --user=foo@bar.com
+```
+
+Note that you can use `RoleBinding` instead, but that comes with caveats. See
+the design decisions section for an explanation of what's happening there.
+
+## Server RBAC
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: impersonator
+rules:
+  - apiGroups:
+      - ''
+    resources:
+      - users
+      - groups
+    verbs:
+      - 'impersonate'
+    # Restrict the groups/users that can be impersonated through kuberift.
+    # resourceNames:
+    #   - foo@bar.com
+    #   - my_group
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kuberift
+rules:
+  - apiGroups:
+      - 'key.kuberift.com'
+    resources:
+      - keys
+    verbs:
+      - '*'
+---
+```
+
 ## Minimum Permissions
 
 - List pods at the cluster level.

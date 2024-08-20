@@ -60,6 +60,10 @@ impl Authenticate for Identity {
 
 impl Display for Identity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.groups.is_empty() {
+            return write!(f, "{}", self.name);
+        }
+
         write!(f, "{}<groups: {}>", self.name, self.groups.join(", "))
     }
 }

@@ -15,10 +15,17 @@ use crate::openid;
 #[derive(Builder)]
 pub struct Controller {
     config: kube::Config,
-    reporter: Reporter,
+    reporter: Option<Reporter>,
 }
 
 impl Controller {
+    pub fn new(config: kube::Config) -> Self {
+        Self {
+            config,
+            reporter: None,
+        }
+    }
+
     pub fn client(&self) -> Result<kube::Client, kube::Error> {
         kube::Client::try_from(self.config.clone())
     }
@@ -36,9 +43,11 @@ impl Controller {
     }
 
     pub async fn publish(&self, obj_ref: ObjectReference, ev: Event) -> Result<()> {
-        Recorder::new(self.client()?, self.reporter.clone(), obj_ref)
-            .publish(ev)
-            .await?;
+        if let Some(reporter) = &self.reporter {
+            Recorder::new(self.client()?, reporter.clone(), obj_ref)
+                .publish(ev)
+                .await?;
+        }
 
         Ok(())
     }

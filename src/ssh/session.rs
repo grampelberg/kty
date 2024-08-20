@@ -174,14 +174,12 @@ impl Session {
             Err(e) => return token_response(e),
         };
 
-        let ctrl = self.controller.borrow();
-
         // The device code is single use, once a token is fetched it no longer works.
         // The server will not disconnect on a failed auth - instead it'll let the user
         // try again (3 times by default).
         self.state.code_used();
 
-        let Some(user_client) = id.authenticate(ctrl).await? else {
+        let Some(user_client) = id.authenticate(&self.controller).await? else {
             // TODO: this isn't great, rejection likely shouldn't be an event either but
             // it has negative implications. There needs to be some way to debug what's
             // happening though. Maybe a debug log level is enough?
@@ -194,7 +192,7 @@ impl Session {
 
         if let Some(user_key) = key {
             Key::from_identity(user_key, &id, expiration)?
-                .update(ctrl.client()?)
+                .update(self.controller.client()?)
                 .await?;
         }
 
@@ -211,7 +209,7 @@ impl server::Handler for Session {
     async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth> {
         self.state.key_offered(key);
 
-        if let Some(client) = key.authenticate(self.controller.borrow()).await? {
+        if let Some(client) = key.authenticate(&self.controller).await? {
             self.state.authenticated(client, "publickey".into());
 
             return Ok(Auth::Accept);
