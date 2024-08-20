@@ -18,7 +18,7 @@ use tracing::info;
 use crate::{
     dashboard::Dashboard,
     events::Event,
-    identity::user::User,
+    identity::key::Key,
     io::Channel,
     openid,
     ssh::{Authenticate, Controller},
@@ -29,9 +29,23 @@ pub enum State {
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
-    Authenticated(User, String),
-    ChannelOpen(User),
+    Authenticated(DebugClient, String),
+    ChannelOpen(DebugClient),
     PtyStarted(Dashboard),
+}
+
+pub struct DebugClient(kube::Client);
+
+impl std::fmt::Debug for DebugClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "kube::Client")
+    }
+}
+
+impl AsRef<kube::Client> for DebugClient {
+    fn as_ref(&self) -> &kube::Client {
+        &self.0
+    }
 }
 
 impl State {
@@ -65,13 +79,13 @@ impl State {
         }
     }
 
-    fn authenticated(&mut self, user: User, method: String) {
-        *self = State::Authenticated(user, method);
+    fn authenticated(&mut self, client: kube::Client, method: String) {
+        *self = State::Authenticated(DebugClient(client), method);
     }
 
     fn channel_opened(&mut self) {
         replace_with_or_abort(self, |self_| match self_ {
-            State::Authenticated(user, _) => State::ChannelOpen(user),
+            State::Authenticated(client, _) => State::ChannelOpen(client),
             _ => self_,
         });
     }
@@ -155,7 +169,7 @@ impl Session {
             (code.clone(), key.clone())
         };
 
-        let id = match self.identity_provider.identity(&code).await {
+        let (id, expiration) = match self.identity_provider.identity(&code).await {
             Ok(id) => id,
             Err(e) => return token_response(e),
         };
@@ -167,21 +181,21 @@ impl Session {
         // try again (3 times by default).
         self.state.code_used();
 
-        let Some(user) = id.authenticate(ctrl).await? else {
+        let Some(user_client) = id.authenticate(ctrl).await? else {
             // TODO: this isn't great, rejection likely shouldn't be an event either but
             // it has negative implications. There needs to be some way to debug what's
             // happening though. Maybe a debug log level is enough?
-            info!(id = %id, "rejecting user");
-
             return Ok(Auth::Reject {
                 proceed_with_methods: None,
             });
         };
 
-        self.state.authenticated(user.clone(), "openid".into());
+        self.state.authenticated(user_client, "openid".into());
 
         if let Some(user_key) = key {
-            user.set_key(ctrl, &user_key, &id.expiration).await?;
+            Key::from_identity(user_key, &id, expiration)?
+                .update(ctrl.client()?)
+                .await?;
         }
 
         Ok(Auth::Accept)
@@ -197,8 +211,8 @@ impl server::Handler for Session {
     async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth> {
         self.state.key_offered(key);
 
-        if let Some(user) = key.authenticate(self.controller.borrow()).await? {
-            self.state.authenticated(user, "publickey".into());
+        if let Some(client) = key.authenticate(self.controller.borrow()).await? {
+            self.state.authenticated(client, "publickey".into());
 
             return Ok(Auth::Accept);
         }
@@ -222,13 +236,14 @@ impl server::Handler for Session {
         }
     }
 
+    // TODO: add some kind of event to log successful authentication.
     #[tracing::instrument(skip(self, _session))]
     async fn auth_succeeded(&mut self, _session: &mut server::Session) -> Result<()> {
-        let State::Authenticated(ref user, ref method) = self.state else {
+        let State::Authenticated(_, ref method) = self.state else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        user.login(&self.controller, method).await?;
+        info!(method, "authenticated");
 
         Ok(())
     }
@@ -299,11 +314,11 @@ impl server::Handler for Session {
         modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
     ) -> Result<()> {
-        let State::ChannelOpen(_) = self.state.borrow_mut() else {
+        let State::ChannelOpen(user_client) = self.state.borrow_mut() else {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let mut dashboard = Dashboard::new(self.controller.client().clone());
+        let mut dashboard = Dashboard::new(user_client.as_ref().clone());
 
         dashboard.start(Channel::new(id, session.handle().clone()))?;
 

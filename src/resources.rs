@@ -26,7 +26,7 @@ use crate::identity;
 pub static MANAGER: &str = "kuberift.com";
 
 pub(crate) fn all() -> Vec<CustomResourceDefinition> {
-    vec![identity::user::User::crd(), identity::key::Key::crd()]
+    vec![identity::key::Key::crd()]
 }
 
 pub(crate) async fn create(

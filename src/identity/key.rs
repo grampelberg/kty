@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use eyre::Result;
-use itertools::Itertools;
 use kube::{
     api::{Api, Patch, PatchParams},
     CustomResource, ResourceExt,
@@ -10,9 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::user::User;
+use super::Identity;
 use crate::{
-    resources::{ApplyPatch, GetOwners, KubeID, MANAGER},
+    resources::{ApplyPatch, KubeID, MANAGER},
     ssh::{Authenticate, Controller},
 };
 
@@ -34,17 +33,56 @@ pub struct KeySpec {
     #[schemars(with = "String")]
     pub key: PublicKey,
     pub expiration: DateTime<Utc>,
+    pub user: String,
+    pub groups: Vec<String>,
 }
 
 impl Key {
+    pub fn from_identity(
+        key: PublicKey,
+        identity: &Identity,
+        expiration: DateTime<Utc>,
+    ) -> Result<Self> {
+        Ok(Key::new(
+            key.kube_id()?.as_str(),
+            KeySpec {
+                key,
+                expiration,
+                user: identity.name.clone(),
+                groups: identity.groups.clone(),
+            },
+        ))
+    }
+
     pub fn expired(&self) -> bool {
         self.spec.expiration < Utc::now()
+    }
+
+    #[tracing::instrument(skip(self, client))]
+    pub async fn update(&self, client: kube::Client) -> Result<()> {
+        Api::<Key>::default_namespaced(client)
+            .patch(
+                &self.name_any(),
+                &PatchParams::apply(MANAGER).force(),
+                &Patch::Apply(&self),
+            )
+            .await?;
+
+        Ok(())
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct KeyStatus {
-    pub last_used: Option<DateTime<Utc>>,
+    pub last_used: DateTime<Utc>,
+}
+
+impl Default for KeyStatus {
+    fn default() -> Self {
+        Self {
+            last_used: Utc::now(),
+        }
+    }
 }
 
 impl KubeID for PublicKey {
@@ -83,8 +121,8 @@ impl Authenticate for PublicKey {
     // - validate the expiration
     // - should there be a status field or condition for an existing key?
     #[tracing::instrument(skip(self, ctrl))]
-    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<User>> {
-        let keys: Api<Key> = Api::default_namespaced(ctrl.client().clone());
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<kube::Client>> {
+        let keys: Api<Key> = Api::default_namespaced(ctrl.client()?);
 
         let Some(key): Option<Key> = keys.get_opt(&self.kube_id()?).await? else {
             return Ok(None);
@@ -94,23 +132,21 @@ impl Authenticate for PublicKey {
             return Ok(None);
         }
 
-        keys.patch_status(
-            &key.name_any(),
-            &PatchParams::apply(MANAGER).force(),
-            &Patch::Apply(&Key::patch(&json!({
-                "status": {
-                    "last_used": Some(Utc::now()),
-                }
-            }))?),
-        )
-        .await?;
+        let client = Identity::authenticate(&key.clone().into(), ctrl).await?;
 
-        let user = keys
-            .get_owners::<User>(&key)
-            .await?
-            .into_iter()
-            .at_most_one()?;
+        if client.is_some() {
+            keys.patch_status(
+                &key.name_any(),
+                &PatchParams::apply(MANAGER).force(),
+                &Patch::Apply(&Key::patch(&json!({
+                    "status": {
+                        "last_used": Some(Utc::now()),
+                    }
+                }))?),
+            )
+            .await?;
+        }
 
-        Ok(user)
+        Ok(client)
     }
 }

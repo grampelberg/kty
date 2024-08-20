@@ -10,21 +10,33 @@ use russh::server::{Config, Handler, Server};
 use session::Session;
 use tracing::error;
 
-use crate::{identity::user::User, openid};
+use crate::openid;
 
 #[derive(Builder)]
 pub struct Controller {
-    client: kube::Client,
+    config: kube::Config,
     reporter: Reporter,
 }
 
 impl Controller {
-    pub fn client(&self) -> &kube::Client {
-        &self.client
+    pub fn client(&self) -> Result<kube::Client, kube::Error> {
+        kube::Client::try_from(self.config.clone())
+    }
+
+    pub fn impersonate(
+        &self,
+        user: String,
+        groups: Vec<String>,
+    ) -> Result<kube::Client, kube::Error> {
+        let mut cfg = self.config.clone();
+        cfg.auth_info.impersonate = Some(user);
+        cfg.auth_info.impersonate_groups = (!groups.is_empty()).then_some(groups);
+
+        kube::Client::try_from(cfg)
     }
 
     pub async fn publish(&self, obj_ref: ObjectReference, ev: Event) -> Result<()> {
-        Recorder::new(self.client.clone(), self.reporter.clone(), obj_ref)
+        Recorder::new(self.client()?, self.reporter.clone(), obj_ref)
             .publish(ev)
             .await?;
 
@@ -75,5 +87,5 @@ impl Server for UIServer {
 
 #[async_trait::async_trait]
 pub trait Authenticate {
-    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<User>>;
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<kube::Client>>;
 }
