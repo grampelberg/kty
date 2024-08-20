@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use color_eyre::{Section, SectionExt};
 use derive_builder::Builder;
 use eyre::Result;
@@ -6,7 +6,7 @@ use itertools::Itertools;
 use jsonwebtoken::{jwk, jwk::JwkSet};
 use serde::{de::Deserializer, Deserialize};
 
-use crate::identity::{Identity, IdentityBuilder};
+use crate::identity::Identity;
 
 #[allow(dead_code)]
 #[derive(Clone, Deserialize, Debug)]
@@ -172,14 +172,19 @@ impl Provider {
         Ok(token_data.claims)
     }
 
-    pub async fn identity(&self, code: &DeviceCode) -> Result<Identity> {
+    pub async fn identity(&self, code: &DeviceCode) -> Result<(Identity, DateTime<Utc>)> {
         let oauth_token = self.oauth_token(code).await?;
         let id_token = self.id_token(&oauth_token)?;
 
-        Ok(IdentityBuilder::default()
-            .key(self.claim.clone())
-            .claims(id_token)
-            .expiration(chrono::Utc::now() + oauth_token.expires_in)
-            .build()?)
+        let Some(name) = id_token.get(&self.claim) else {
+            return Err(eyre::eyre!("Claim {} not found in token", self.claim))
+                .section(format!("{id_token:#?}").header("Token Claims"));
+        };
+
+        // TODO: add groups via claim to the identity.
+        Ok((
+            Identity::new(name.as_str().unwrap().into(), Vec::new()),
+            chrono::Utc::now() + oauth_token.expires_in,
+        ))
     }
 }

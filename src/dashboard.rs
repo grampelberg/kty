@@ -1,5 +1,3 @@
-mod table;
-
 use std::time::Duration;
 
 use eyre::{eyre, Result};

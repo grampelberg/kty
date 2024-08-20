@@ -51,16 +51,21 @@ pub struct Serve {
 #[async_trait::async_trait]
 impl Command for Serve {
     async fn run(&self) -> Result<()> {
-        let client = Client::try_default().await?;
-
-        if !self.no_create {
-            resources::create(&Api::all(client.clone()), true).await?;
-        }
+        let cfg = kube::Config::infer().await?;
 
         let reporter = Reporter {
             controller: CONTROLLER_NAME.into(),
             instance: Some(hostname::get()?.to_string_lossy().into()),
         };
+
+        let ctrl = ControllerBuilder::default()
+            .config(cfg)
+            .reporter(reporter.clone())
+            .build()?;
+
+        if !self.no_create {
+            resources::create(&Api::all(ctrl.client()?), true).await?;
+        }
 
         let server_cfg = Config {
             inactivity_timeout: Some(self.inactivity_timeout.into()),
@@ -78,10 +83,7 @@ impl Command for Serve {
         let jwks = cfg.jwks().await?;
 
         ssh::UIServer::new(
-            ControllerBuilder::default()
-                .client(client)
-                .reporter(reporter)
-                .build()?,
+            ctrl,
             openid::ProviderBuilder::default()
                 .audience(self.audience.clone())
                 .claim(self.claim.clone())

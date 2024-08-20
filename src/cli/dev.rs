@@ -1,3 +1,4 @@
+mod authz;
 mod dashboard;
 mod shell;
 mod stdin;
@@ -14,6 +15,7 @@ pub struct Dev {
 
 #[derive(Subcommand, Container)]
 enum DevCmd {
+    Authz(authz::Authz),
     Dashboard(dashboard::Dashboard),
     Shell(shell::Shell),
     Stdin(stdin::Stdin),
