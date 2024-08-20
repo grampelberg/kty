@@ -132,9 +132,9 @@ impl Authenticate for PublicKey {
             return Ok(None);
         }
 
-        let client = Identity::authenticate(&key.clone().into(), ctrl).await?;
+        let user_client = Identity::authenticate(&key.clone().into(), ctrl).await?;
 
-        if client.is_some() {
+        if user_client.is_some() {
             keys.patch_status(
                 &key.name_any(),
                 &PatchParams::apply(MANAGER).force(),
@@ -147,6 +147,6 @@ impl Authenticate for PublicKey {
             .await?;
         }
 
-        Ok(client)
+        Ok(user_client)
     }
 }

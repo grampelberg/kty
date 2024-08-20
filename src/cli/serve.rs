@@ -60,7 +60,7 @@ impl Command for Serve {
 
         let ctrl = ControllerBuilder::default()
             .config(cfg)
-            .reporter(reporter.clone())
+            .reporter(Some(reporter.clone()))
             .build()?;
 
         if !self.no_create {

@@ -28,6 +28,8 @@ impl Apex {
     }
 }
 
+// TODO: figure out how to manage auth issues and whether to show/hide UI
+// elements.
 impl Widget for Apex {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         self.pods.dispatch(event)
