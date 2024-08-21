@@ -16,3 +16,4 @@ target/
 tmp
 .DS_Store
 .envrc
+CHANGELOG.md

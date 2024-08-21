@@ -3,7 +3,7 @@ red := '\033[31m'
 green := '\033[32m'
 yellow := '\033[33m'
 image := "ghcr.io/grampelberg/kuberift"
-git_version := `git rev-parse --short HEAD || echo "unknown"`
+git_version := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 tag := image + ":sha-" + git_version
 
 tools:
@@ -34,3 +34,19 @@ upload-image:
 
     @echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
     docker push {{ tag }}
+
+extract-from-digests:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    mkdir -p /tmp/bins
+
+    for digest in /tmp/digests/*/*; do
+        sha="$(basename "${digest}")"
+        name="$(basename $(dirname "${digest}"))"
+        echo "Extracting ${name}@sha256:${sha}"
+
+        container_id="$(docker create {{ image }}@sha256:${sha})"
+        docker cp "${container_id}:/usr/local/bin/kuberift" "/tmp/bins/${name}"
+        docker rm "${container_id}"
+    done
