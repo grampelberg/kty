@@ -8,6 +8,14 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -D warnings
+
+concurrency:
+  group: |-
+    ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -18,6 +26,7 @@ jobs:
       - name: Install toolchain
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
+      - uses: cargo-bins/cargo-binstall@main
       - uses: jdx/mise-action@v2
         with:
           experimental: true
@@ -30,8 +39,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
-        run: rustup show active-toolchain
+        run: |-
+          rustup show active-toolchain
+          rustup install --profile default nightly
+
       - uses: Swatinem/rust-cache@v2
+      - uses: cargo-bins/cargo-binstall@main
       - uses: jdx/mise-action@v2
         with:
           experimental: true
@@ -46,6 +59,7 @@ jobs:
       - name: Install toolchain
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2
+      - uses: cargo-bins/cargo-binstall@main
       - uses: jdx/mise-action@v2
         with:
           experimental: true

@@ -35,6 +35,7 @@ impl Dashboard {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_fps(mut self, fps: u64) -> Self {
         self.tick = Duration::from_millis(1000 / fps);
 

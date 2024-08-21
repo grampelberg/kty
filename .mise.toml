@@ -1,7 +1,7 @@
 [tools]
 "cargo:cargo-audit" = "latest"
-"cargo:cargo-binstall" = "latest"
-"cargo:cargo-outdated" = "latest"
-"npm:prettier" = "latest"
-"npm:prettier-plugin-toml" = "latest"
-just = "latest"
+"cargo:cargo-binstall" = "1.7.4"
+"cargo:cargo-outdated" = "0.15.0"
+"npm:prettier" = "3.3.2"
+"npm:prettier-plugin-toml" = "2.0.1"
+just = "1.34.0"

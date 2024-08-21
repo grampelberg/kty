@@ -2,12 +2,9 @@ normal := '\033[0m'
 red := '\033[31m'
 green := '\033[32m'
 yellow := '\033[33m'
-
 image := "ghcr.io/grampelberg/kuberift"
-pkg_version := `cargo pkgid | cut -d# -f2 || "unknown"`
-git_version := `git rev-parse --short HEAD || "unknown"`
-version := pkg_version + "-" + git_version
-
+git_version := `git rev-parse --short HEAD || echo "unknown"`
+tag := image + ":sha-" + git_version
 
 tools:
     mise install
@@ -22,15 +19,18 @@ fmt-check:
     just --fmt --unstable --check
 
 lint:
-    CARGO_BUILD_RUSTFLAGS="-Dwarnings" cargo clippy
+    cargo clippy --no-deps
+
+build-binary:
+    cargo build --release --bin kuberift
 
 build-image:
-    docker build -t {{image}}:{{version}} -f docker/kuberift.dockerfile .
+    docker build -t {{ tag }} -f docker/kuberift.dockerfile .
 
 upload-image:
     @if [ -z ${GHCR_USER+x} ] || [ -z ${GHCR_TOKEN+x} ]; then \
-        echo "{{red}}GHCR_USER and/or GHCR_TOKEN is not set.{{normal}} See .envrc.example" && exit 1; \
+        echo "{{ red }}GHCR_USER and/or GHCR_TOKEN is not set.{{ normal }} See .envrc.example" && exit 1; \
     fi
 
     @echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-    docker push {{image}}:{{version}}
+    docker push {{ tag }}

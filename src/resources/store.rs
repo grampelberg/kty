@@ -83,10 +83,6 @@ where
         }
     }
 
-    pub fn state(&self) -> Vec<Arc<K>> {
-        self.reader.state()
-    }
-
     pub fn items(&self, filter: Option<String>) -> Vec<Arc<K>> {
         let mut items = filter
             .map(|filter| {
