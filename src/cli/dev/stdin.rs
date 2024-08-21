@@ -57,7 +57,7 @@ async fn event_loop(mut rx: UnboundedReceiver<Bytes>) {
                     break;
                 };
 
-                let ev: Event = msg.try_into().unwrap();
+                let ev: Event = msg.into();
                 tracing::info!("ev: {:?}", ev);
 
 

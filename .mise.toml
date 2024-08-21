@@ -1,4 +1,5 @@
 [tools]
+"cargo:cargo-audit" = "latest"
 "cargo:cargo-binstall" = "latest"
 "cargo:cargo-outdated" = "latest"
 "npm:prettier" = "latest"

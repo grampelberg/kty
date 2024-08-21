@@ -13,18 +13,18 @@ categories.workspace = true
 [workspace.package]
 version = "0.1.0"
 authors = ["Thomas Rampelberg <thomas@saunter.org>"]
-documentation = "https://docs.rs/kubrift"
+documentation = "https://github.com/grampelberg/kubrift"
 edition = "2021"
 license-file = "LICENSE"
 repository = "https://github.com/grampelberg/kuberift"
-keywords = ["cli"]
+keywords = ["cli", "kubernetes", "ssh", "tui", "terminal"]
 categories = ["command-line-interface"]
 
 [dependencies]
 async-trait = "0.1.81"
-cata = { version = "0.1.1", path = "../cata" }
+cata = { version = "0.1.1" }
 chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.15", features = ["derive", "env"] }
+clap = { version = "4.5.16", features = ["derive", "env"] }
 clap-verbosity-flag = "2.2.1"
 clio = { version = "0.3.5", features = ["clap", "clap-parse"] }
 color-eyre = "0.6.3"
@@ -45,21 +45,24 @@ jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
 kube = { version = "0.93.1", features = ["derive", "runtime", "ws"] }
 mio = "1.0.2"
-ratatui = { version = "0.27.0", features = ["unstable-rendered-line-info", "unstable-widget-ref"] }
+ratatui = { version = "0.27.0", features = [
+    "unstable-rendered-line-info",
+    "unstable-widget-ref",
+] }
 regex = "1.10.6"
 replace_with = "0.1.7"
-reqwest = { version = "0.12.5", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.12.7", features = ["json", "stream", "multipart"] }
 ringbuffer = "0.15.0"
-russh = "0.44.0"
-russh-keys = "0.44.0"
+russh = "0.45.0"
+russh-keys = "0.45.0"
 schemars = { version = "0.8.21", features = ["chrono"] }
-serde = { version = "1.0.207", features = ["derive"] }
+serde = { version = "1.0.208", features = ["derive"] }
 serde_json = "1.0.124"
 serde_path_to_error = "0.1.16"
 serde_yaml = "0.9.34"
 syntect = "5.2.0"
 syntect-tui = "3.0.3"
-tokio = { version = "1.39.2", features = ["full"] }
+tokio = { version = "1.39.3", features = ["full"] }
 tokio-util = { version = "0.7.11", features = ["io-util"] }
 tracing = "0.1.40"
 tracing-error = { version = "0.2.0", features = ["traced-error"] }
@@ -83,11 +86,11 @@ unused_crate_dependencies = "warn"
 
 [workspace.lints.clippy]
 multiple_crate_versions = "warn"
-cargo = "warn"
-complexity = "warn"
-correctness = "warn"
-pedantic = "warn"
-perf = "warn"
-style = "warn"
-suspicious = "warn"
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
 missing_errors_doc = "allow"

@@ -63,7 +63,7 @@ pub struct Yaml {
 }
 
 impl Yaml {
-    pub fn new<K>(resource: Arc<K>) -> Self
+    pub fn new<K>(resource: &Arc<K>) -> Self
     where
         K: Resource + Serialize + Send + Sync + 'static,
     {
@@ -82,10 +82,7 @@ impl Yaml {
     where
         K: Resource + Serialize + Send + Sync + 'static,
     {
-        Tab::new(
-            name,
-            Box::new(move || Box::new(Self::new(resource.clone()))),
-        )
+        Tab::new(name, Box::new(move || Box::new(Self::new(&resource))))
     }
 
     fn scroll(&mut self, key: &Keypress) {

@@ -1,4 +1,3 @@
-pub mod container;
 pub mod shell;
 
 use std::sync::Arc;

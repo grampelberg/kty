@@ -17,6 +17,7 @@ use crate::{
 
 // TODO: make it possible for kube-derive to consume a variable for
 // group/version
+#[allow(clippy::module_name_repetitions)]
 #[derive(CustomResource, Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[kube(
     group = "kuberift.com",
@@ -72,6 +73,7 @@ impl Key {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub struct KeyStatus {
     pub last_used: DateTime<Utc>,
