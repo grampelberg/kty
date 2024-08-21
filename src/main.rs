@@ -1,4 +1,6 @@
 //! # kuberift
+
+#[warn(dead_code)]
 mod cli;
 mod dashboard;
 mod events;
