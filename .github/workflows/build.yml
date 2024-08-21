@@ -15,6 +15,7 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: -D warnings
+  IMAGE: ghcr.io/grampelberg/kuberift
 
 concurrency:
   group: |-
@@ -23,7 +24,17 @@ concurrency:
 
 jobs:
   binary:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.host_os }}
+
+    strategy:
+      matrix:
+        os: [darwin]
+        arch:
+          - arm64
+
+        include:
+          - arch: arm64
+            host_os: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -32,35 +43,63 @@ jobs:
           rustup show active-toolchain
 
       - uses: Swatinem/rust-cache@v2
-      - uses: cargo-bins/cargo-binstall@main
+
+      # There appears to be an issue with getting 403s from github when trying to use binstall on macs. Manually install any required tools for the build.
+      # - uses: cargo-bins/cargo-binstall@main
+      # - uses: jdx/mise-action@v2
+      #   with:
+      #     experimental: true
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - name: justfile
+          mise_toml: |
+            [tools]
+            just = "latest"
+      - name: build
         run: just build-binary
+
+      - name: rename
+        run: |-
+          cp target/release/kuberift kuberift-${{ matrix.os }}-${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kuberift
-          path: target/release/kuberift
+          name: kuberift-${{ matrix.os }}-${{ matrix.arch }}
+          path: kuberift*
+          retention-days: 1
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.host_os }}
 
     permissions:
       packages: write
 
+    strategy:
+      matrix:
+        os: [linux]
+        arch:
+          - amd64
+          # The emulated arm64 builds are painfully slow (90m last time). Skip them until we have dedicated linux-arm64 hardware.
+          # - arm64
+
+        include:
+          - arch: amd64
+            host_os: ubuntu-latest
+
     steps:
-      - name: Docker meta
+      - name: meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/grampelberg/kuberift
+            ${{ env.IMAGE }}
           tags: |
             type=ref,event=tag
             type=raw,value=unstable,enable={{is_default_branch}}
             type=sha
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: buildx
         uses: docker/setup-buildx-action@v3
@@ -73,34 +112,145 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
+          platforms: ${{ matrix.os }}/${{ matrix.arch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: docker/kuberift.dockerfile
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          push: ${{ github.event_name != 'pull_request' }}
+          # push: ${{ github.event_name != 'pull_request' }}
+          push: true
+          outputs: |-
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true
+
+      - name: create digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.os }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event_name != 'pull_request' }}
+
+    permissions:
+      packages: write
+
+    needs:
+      - docker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: fetch digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+
+      - name: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=unstable,enable={{is_default_branch}}
+            type=sha
+
+      - name: login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+          mise_toml: |
+            [tools]
+            just = "latest"
+
+      - name: extract binary
+        run: just extract-from-digests
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          name: kuberift-docker-binaries
+          path: /tmp/bins/*
+          retention-days: 1
+
+      - name: push image
+        working-directory: /tmp/digests
+        run: |
+          cp */* .
+          rm -rf digests-*
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
 
   release:
     runs-on: ubuntu-latest
     needs:
       - binary
-      - docker
+      - merge
 
     permissions:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: kuberift
-      - name: Release
+          path: /tmp/binaries
+          pattern: kuberift-*
+          merge-multiple: true
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: changelog
+        run: git cliff -o CHANGELOG.md -l
+
+      - name: versioned release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          body_path: CHANGELOG.md
           files: |-
-            kuberift
+            /tmp/binaries/*
+
+      - name: unstable release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          body_path: CHANGELOG.md
+          name: unstable
+          prerelease: true
+          tag_name: main
+          files: |-
+            /tmp/binaries/*
