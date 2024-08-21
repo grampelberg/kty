@@ -15,6 +15,7 @@ use crate::openid;
 #[derive(Builder)]
 pub struct Controller {
     config: kube::Config,
+    #[allow(dead_code)]
     reporter: Option<Reporter>,
 }
 
@@ -42,6 +43,7 @@ impl Controller {
         kube::Client::try_from(cfg)
     }
 
+    #[allow(dead_code)]
     pub async fn publish(&self, obj_ref: ObjectReference, ev: Event) -> Result<()> {
         if let Some(reporter) = &self.reporter {
             Recorder::new(self.client()?, reporter.clone(), obj_ref)

@@ -106,10 +106,6 @@ impl Table {
         self
     }
 
-    pub fn exit(&mut self) {
-        self.state.list();
-    }
-
     pub fn enter(&mut self, idx: usize, filter: Option<String>) -> Result<Broadcast> {
         let Some(constructor) = self.constructor.as_ref() else {
             return Ok(Broadcast::Ignored);
