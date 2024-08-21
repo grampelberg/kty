@@ -4,21 +4,17 @@ pub mod pod;
 pub mod store;
 
 use color_eyre::Section;
-use eyre::{eyre, OptionExt, Result};
-use futures::{future, StreamExt, TryStreamExt};
+use eyre::{eyre, Result};
+use futures::StreamExt;
 use itertools::Itertools;
 use json_value_merge::Merge;
-use k8s_openapi::{
-    apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
-    apimachinery::pkg::apis::meta::v1::OwnerReference,
-};
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{
     api::{Api, ObjectMeta, PartialObjectMetaExt, PatchParams, PostParams, ResourceExt},
-    core::NamespaceResourceScope,
     CustomResourceExt, Resource,
 };
 use regex::Regex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use tracing::info;
 
 use crate::identity;
@@ -78,88 +74,6 @@ impl KubeID for String {
         Ok(Regex::new(r"[^A-Za-z\d]")?
             .replace_all(self, "-")
             .to_lowercase())
-    }
-}
-
-pub(crate) trait AddReferences: Resource {
-    fn add_controller<K>(&mut self, obj: &K) -> Result<()>
-    where
-        K: Resource<DynamicType = ()>;
-}
-
-impl<K: Resource> AddReferences for K {
-    fn add_controller<O>(&mut self, owner: &O) -> Result<()>
-    where
-        O: Resource<DynamicType = ()>,
-    {
-        let ctrl_ref = owner
-            .controller_owner_ref(&())
-            .ok_or_eyre("controller reference not found")?;
-
-        self.meta_mut()
-            .owner_references
-            .get_or_insert_with(Vec::new)
-            .push(ctrl_ref);
-
-        Ok(())
-    }
-}
-
-trait IsKind {
-    fn is_kind(reference: &OwnerReference) -> bool;
-}
-
-impl<K> IsKind for K
-where
-    K: Resource,
-    <K as Resource>::DynamicType: Default,
-{
-    fn is_kind(reference: &OwnerReference) -> bool {
-        reference.api_version == K::api_version(&K::DynamicType::default())
-            && reference.kind == K::kind(&K::DynamicType::default())
-    }
-}
-
-#[async_trait::async_trait]
-pub(crate) trait GetOwners<Owned>
-where
-    Owned: Resource + Sync,
-    <Owned as Resource>::DynamicType: Default,
-{
-    async fn get_owners<Owner>(self, obj: &Owned) -> Result<Vec<Owner>, kube::Error>
-    where
-        <Owner as Resource>::DynamicType: Default,
-        Owner: Resource<Scope = NamespaceResourceScope>
-            + Clone
-            + DeserializeOwned
-            + std::fmt::Debug
-            + Send;
-}
-
-#[async_trait::async_trait]
-impl<Owned> GetOwners<Owned> for Api<Owned>
-where
-    Owned: Resource + Sync,
-    <Owned as Resource>::DynamicType: Default,
-{
-    async fn get_owners<Owner>(self, obj: &Owned) -> Result<Vec<Owner>, kube::Error>
-    where
-        <Owner as Resource>::DynamicType: Default,
-        Owner: Resource<Scope = NamespaceResourceScope>
-            + Clone
-            + DeserializeOwned
-            + std::fmt::Debug
-            + Send,
-    {
-        let client: &Api<Owner> = &Api::default_namespaced(self.into());
-
-        futures::stream::iter(obj.owner_references())
-            .filter(|reference| future::ready(Owner::is_kind(reference)))
-            .then(move |reference| async { client.get(&reference.name) })
-            .buffered(100)
-            .boxed()
-            .try_collect()
-            .await
     }
 }
 

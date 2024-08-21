@@ -42,7 +42,7 @@ impl From<&[u8]> for Event {
 impl From<Bytes> for Event {
     fn from(data: Bytes) -> Event {
         Event::Input(Input {
-            key: data.as_ref().try_into().unwrap(),
+            key: data.as_ref().into(),
             raw: data,
         })
     }
@@ -54,9 +54,9 @@ pub struct Input {
     raw: Bytes,
 }
 
-impl<'a> Into<&'a [u8]> for &'a Input {
-    fn into(self) -> &'a [u8] {
-        self.raw.as_ref()
+impl<'a> From<&'a Input> for &'a [u8] {
+    fn from(input: &'a Input) -> &'a [u8] {
+        input.raw.as_ref()
     }
 }
 

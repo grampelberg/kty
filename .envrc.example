@@ -1,0 +1,4 @@
+#!/bin/bash
+
+export GHCR_USER="me"
+export GHCR_TOKEN="token"

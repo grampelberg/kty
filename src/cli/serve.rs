@@ -6,7 +6,7 @@ use clap::{
 };
 use eyre::Result;
 use itertools::Itertools;
-use kube::{api::Api, runtime::events::Reporter, Client};
+use kube::{api::Api, runtime::events::Reporter};
 use russh::{server::Config, MethodSet};
 
 use crate::{

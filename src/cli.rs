@@ -54,11 +54,11 @@ enum RootCmd {
 
 impl Command for Root {
     fn pre_run(&self) -> Result<()> {
-        match LEVEL.set(self.verbosity.log_level_filter().as_trace()) {
-            Ok(_) => (),
-            Err(_) => {
-                return Err(eyre!("log level already set"));
-            }
+        if LEVEL
+            .set(self.verbosity.log_level_filter().as_trace())
+            .is_err()
+        {
+            return Err(eyre!("log level already set"));
         }
 
         let filter = EnvFilter::builder()

@@ -21,6 +21,7 @@ impl Text {
         self
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn with_content(mut self, content: &str) -> Self {
         self.content = content.to_string();
         self.pos = self.content.len() as u16;

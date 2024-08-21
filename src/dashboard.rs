@@ -103,6 +103,7 @@ impl Mode {
         });
     }
 
+    #[allow(clippy::match_wildcard_for_single_variants)]
     fn ui(&mut self) {
         replace_with_or_abort(self, |self_| match self_ {
             Self::Raw(_, previous) => Self::UI(previous),

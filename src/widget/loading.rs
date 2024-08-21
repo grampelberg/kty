@@ -7,6 +7,7 @@ use ratatui::{
 pub struct Loading;
 
 impl WidgetRef for Loading {
+    #[allow(clippy::cast_possible_truncation)]
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let pg = Paragraph::new("Loading...");
 

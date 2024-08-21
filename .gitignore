@@ -19,3 +19,4 @@ Cargo.lock
 
 tmp
 .DS_Store
+.envrc
