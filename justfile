@@ -45,13 +45,13 @@ extract-from-digests:
 
     for digest in /tmp/digests/*/*; do
         sha="$(basename "${digest}")"
-        name="$(basename $(dirname "${digest}"))"
-        echo "Extracting ${name}@sha256:${sha}"
+        name="kuberift-$(basename $(dirname "${digest}") | cut -d- -f2-)"
+        echo "Extracting {{ image }}@sha256:${sha}"
 
         container_id="$(docker create {{ image }}@sha256:${sha})"
         docker cp "${container_id}:/usr/local/bin/kuberift" "/tmp/bins/${name}"
         docker rm "${container_id}"
     done
 
-replace-version:
-    rg -g '!justfile' "{{ version_placeholder }}" -l | xargs -I {} sed -i '' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
+set-version:
+    git grep -l "{{ version_placeholder }}" | grep -v "justfile" | xargs -I {} sed -i'.tmp' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
