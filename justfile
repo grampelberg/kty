@@ -5,7 +5,7 @@ yellow := '\033[33m'
 image := "ghcr.io/grampelberg/kuberift"
 git_version := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 image_tag := image + ":sha-" + git_version
-version := `git cliff --bumped-version --tag-pattern "v.*" 2>/dev/null | cut -c2- || echo "0.0.0"` + "-UNSTABLE"
+version := `git cliff --bumped-version --tag-pattern "v.*" 2>/dev/null | cut -c2- || echo "0.0.0"`
 version_placeholder := "0.0.0-UNSTABLE"
 
 tools:
