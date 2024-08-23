@@ -1,10 +1,10 @@
 name: check
 
 on:
-  push:
-    branches: ['main']
   pull_request:
     branches: ['main']
+
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,7 +14,7 @@ env:
 
 concurrency:
   group: |-
-    ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
