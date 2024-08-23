@@ -1,0 +1,21 @@
+name: pr
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: |-
+    build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  build:
+    permissions:
+      packages: write
+
+    uses: ./.github/workflows/build.yml

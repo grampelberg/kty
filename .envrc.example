@@ -1,4 +1,6 @@
 #!/bin/bash
 
+export LOCAL_REGISTRY="kuberift:5432"
+
 export GHCR_USER="me"
 export GHCR_TOKEN="token"
