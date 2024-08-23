@@ -79,14 +79,14 @@ jobs:
         arch:
           - amd64
           # The emulated arm64 builds are painfully slow (90m last time). Skip them until we have dedicated linux-arm64 hardware.
-          - arm64
+          # - arm64
 
         include:
           - arch: amd64
             runner: ubuntu-latest
 
-          - arch: arm64
-            runner: buildjet-4vcpu-ubuntu-2204-arm
+          # - arch: arm64
+          #   runner: buildjet-4vcpu-ubuntu-2204-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -129,8 +129,10 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.os }}/${{ matrix.arch }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ env.IMAGE }}-cache
+          cache-to: type=registry,ref=${{ env.IMAGE }}-cache,mode=max
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
           file: docker/kuberift.dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
