@@ -1,0 +1,15 @@
+apiVersion: v2
+name: kuberift
+description: SSH into your cluster
+
+type: application
+
+version: 0.0.0-UNSTABLE
+appVersion: 0.0.0-UNSTABLE
+
+dependencies:
+  - name: gateway-helm
+    repository: oci://docker.io/envoyproxy
+    version: v1.1.0
+    condition: envoy.enabled
+    alias: envoy

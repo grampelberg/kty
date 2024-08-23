@@ -1,0 +1,32 @@
+server:
+  enabled: true
+  # image: ghcr.io/kuberift/kuberift:latest
+  # replicas: 1
+
+  # Enable to autoscale the deployment based on CPU utilization
+  # autoscale: true
+  # maxReplicas: 10
+
+  # Uncomment to configure your own openid provider.
+  # openid:
+  #   audience: https://kuberift.com
+  #   clientID: fix-me
+  #   configURL: https://kuberift.auth0.com/.well-known/openid-configuration
+
+  # Make the service a load balancer so that it gets an external IP address if your cluster supports it.
+  # loadbalancer: true
+
+  # resources:
+  #   limits:
+  #     cpu: 1
+  #     memory: 128Mi
+  #   requests:
+  #     cpu: 1
+  #     memory: 128Mi
+
+# Enable the gateway tag to have a gateway, TCPRoute. Enable envoy to have a GatewayClass created as well.
+# tags:
+#   - gateway
+
+envoy:
+  enabled: false
