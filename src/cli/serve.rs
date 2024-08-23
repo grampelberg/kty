@@ -29,13 +29,11 @@ pub struct Serve {
     // TODO(thomas): fetch these from the CRD
     #[clap(long, default_value = "1hr")]
     inactivity_timeout: humantime::Duration,
-    #[clap(long, default_value = "")]
-    key_path: String,
-    #[clap(long, default_value = AUDIENCE)]
+    #[clap(long, default_value = AUDIENCE, env = "KUBERIFT_AUDIENCE")]
     audience: String,
-    #[clap(long, default_value = CLIENT_ID)]
+    #[clap(long, default_value = CLIENT_ID, env = "KUBERIFT_CLIENT_ID")]
     client_id: String,
-    #[clap(long, default_value = OID_CONFIG_URL)]
+    #[clap(long, default_value = OID_CONFIG_URL, env = "KUBERIFT_OID_CONFIG_URL")]
     openid_configuration: String,
     /// Claim of the `id_token` to use as the user's ID.
     #[clap(long, default_value = "email")]

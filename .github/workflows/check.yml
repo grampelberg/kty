@@ -1,9 +1,6 @@
 name: check
 
 on:
-  pull_request:
-    branches: ['main']
-
   workflow_call:
 
 env:
@@ -11,11 +8,6 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: -D warnings
-
-concurrency:
-  group: |-
-    check-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   lint:

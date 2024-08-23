@@ -1,0 +1,6 @@
+server:
+  enabled: true
+  loadbalancer: true
+
+envoy:
+  enabled: false

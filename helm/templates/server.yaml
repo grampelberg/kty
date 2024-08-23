@@ -1,0 +1,88 @@
+{{- with .Values.server -}}
+{{- if .enabled -}}
+
+{{- if .autoscale -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: server
+  labels:
+    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: server
+  minReplicas: {{ .replicas | default 1 }}
+  maxReplicas: {{ .maxReplicas | default 10 }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 90
+{{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+spec:
+  {{- if .loadbalancer }}
+  type: LoadBalancer
+  {{- else -}}
+  type: ClusterIP
+  {{- end }}
+
+  ports:
+    - port: 2222
+  selector:
+    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  labels:
+    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+spec:
+  replicas: {{ .replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 8 }}
+
+    spec:
+      serviceAccountName: kuberift-server
+
+      containers:
+        - name: indexify
+          image: {{ include "image" (dict "image" .image "global" $) }}
+
+          command: ['kuberift']
+          args:
+            - serve
+            - -vv
+            - --address=0.0.0.0:2222
+
+          {{- with .openid -}}
+          env:
+            - name: KUBERIFT_AUDIENCE
+              value: {{ .audience }}
+            - name: KUBERIFT_CLIENT_ID
+              value: {{ .clientID }}
+            - name: KUBERIFT_OID_CONFIG_URL
+              value: {{ .configURL }}
+          {{- end }}
+
+          {{- if .resources}}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}

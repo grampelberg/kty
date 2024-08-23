@@ -1,5 +1,42 @@
 # kuberift
 
+## Deployment
+
+The `kuberift` server needs access to your cluster's API server and credentials
+to connect to it. There are a couple ways to do this:
+
+- On cluster - you can run it on cluster. Check out the [helm chart][helm-chart]
+  for an easy way to get started. By running it on cluster, you get access and
+  credentials automatically. The server then needs to be exposed so that you can
+  connect to it. This can be done by any TCP load balancer. If you're running in
+  the cloud, setting the server's service to `type: LoadBalancer` is the
+  easiest. Alternatives include using the [gateway api][gateway-api] or
+  configuring your ingress controller to route TCP.
+- Off cluster - if you're already using jump hosts to get into your cluster,
+  kuberift can run there. All you need to do is create a `kubeconfig` that uses
+  the correct service account. There are [some plugins][sa-plugin] to make this
+  easy. You'll still need a valid `ClusterRole` and `ClusterRoleBinding` setup.
+  Take a look at the sample [rbac][helm-rbac] to see what do to there.
+
+[gateway-api]: https://gateway-api.sigs.k8s.io
+[helm-chart]: #helm
+[sa-plugin]:
+  https://github.com/superbrothers/kubectl-view-serviceaccount-kubeconfig-plugin
+[helm-rbac]: helm/templates/rbac.yaml
+
+### Helm
+
+There is a provided `getting-started.yaml` set of values. To install this on
+your cluster, you can run:
+
+```bash
+helm install kuberift oci://ghcr.io/grampelberg/kuberift -n kuberift --create-namespace
+```
+
+For more detailed instructions, take a look at the [README][helm-readme].
+
+[helm-readme]: helm/README.md
+
 ## Identity (Authentication)
 
 Access is managed via k8s' RBAC system. This is managed with `User` and `Group`
@@ -116,3 +153,8 @@ rules:
   The downside to using this kind of configuration is that it'll need to be
   handled in the provider backend and it is unclear how easy that'll be. It is
   possible in auth0, so I'll go down this route for now.
+
+- Stabilize the host key by using a cert that all the pods share.
+- Correctly handle SIGTERM.
+- Add prometheus metrics.
+- Implement readiness/liveness probes.

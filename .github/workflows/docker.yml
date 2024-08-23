@@ -1,0 +1,96 @@
+name: docker
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        description: 'Operating system to build for'
+        default: 'linux'
+        type: string
+      arch:
+        required: true
+        description: 'Architecture to build for'
+        default: 'amd64'
+        type: string
+      runner:
+        required: true
+        description: 'Runner to use'
+        default: 'ubuntu-latest'
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -D warnings
+  IMAGE: ghcr.io/grampelberg/kuberift
+  CACHE: ghcr.io/grampelberg/cache/kuberift
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: tags
+        run: git fetch --prune --unshallow --tags
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff
+      - name: set version
+        run: just set-version
+
+      - name: meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=unstable,enable={{is_default_branch}}
+            type=sha
+
+      - name: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ inputs.os }}/${{ inputs.arch }}
+          cache-from: type=registry,ref=${{ env.CACHE }}
+          cache-to: type=registry,ref=${{ env.CACHE }},mode=max
+          file: docker/kuberift.dockerfile
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          push: ${{ github.event_name != 'pull_request' }}
+          outputs: |-
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true
+
+      - name: create digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ inputs.os }}-${{ inputs.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1

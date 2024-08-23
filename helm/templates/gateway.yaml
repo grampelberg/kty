@@ -1,0 +1,48 @@
+{{- with .Values -}}
+{{ if has "gateway" .tags }}
+
+{{- if .envoy.enabled -}}
+---
+kind: GatewayClass
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: kuberift
+  labels:
+    {{- include "labels" (dict "name" "kuberift" "component" "gateway" "global" $) | nindent 4 }}
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+{{- end }}
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: kuberift
+  labels:
+     {{- include "labels" (dict "name" "kuberift" "component" "gateway" "global" $) | nindent 4 }}
+spec:
+  gatewayClassName: kuberift
+  listeners:
+  - name: ssh
+    protocol: TCP
+    port: 2222
+    allowedRoutes:
+      kinds:
+      - kind: TCPRoute
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: kuberift
+  labels:
+    {{- include "labels" (dict "name" "kuberift" "component" "gateway" "global" $) | nindent 4 }}
+spec:
+  parentRefs:
+  - name: kuberift
+    sectionName: ssh
+  rules:
+  - backendRefs:
+    - name: server
+      port: 2222
+{{- end }}
+{{- end }}

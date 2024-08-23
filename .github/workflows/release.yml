@@ -28,8 +28,6 @@ jobs:
   merge:
     runs-on: ubuntu-latest
 
-    if: ${{ github.event_name != 'pull_request' }}
-
     permissions:
       packages: write
 
@@ -93,6 +91,35 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
 
+  helm:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+
+    permissions:
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+          mise_toml: |
+            [tools]
+            helm = "latest"
+            just = "latest"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/chart
+          name: helm
+
+      - name: upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: just helm-upload
+
   release:
     runs-on: ubuntu-latest
     needs:
@@ -111,6 +138,11 @@ jobs:
           path: /tmp/binaries
           pattern: kuberift-*
           merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/chart
+          name: helm
 
       - uses: taiki-e/install-action@v2
         with:
@@ -137,3 +169,4 @@ jobs:
           tag_name: unstable
           files: |-
             /tmp/binaries/*
+            /tmp/chart/*
