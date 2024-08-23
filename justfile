@@ -4,7 +4,9 @@ green := '\033[32m'
 yellow := '\033[33m'
 image := "ghcr.io/grampelberg/kuberift"
 git_version := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
-tag := image + ":sha-" + git_version
+image_tag := image + ":sha-" + git_version
+version := `git cliff --bumped-version --tag-pattern "v.*" 2>/dev/null | cut -c2- || echo "0.0.0"` + "-UNSTABLE"
+version_placeholder := "0.0.0-UNSTABLE"
 
 tools:
     mise install
@@ -25,7 +27,7 @@ build-binary:
     cargo build --release --bin kuberift
 
 build-image:
-    docker build -t {{ tag }} -f docker/kuberift.dockerfile .
+    docker build -t {{ image_tag }} -f docker/kuberift.dockerfile .
 
 upload-image:
     @if [ -z ${GHCR_USER+x} ] || [ -z ${GHCR_TOKEN+x} ]; then \
@@ -33,7 +35,7 @@ upload-image:
     fi
 
     @echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-    docker push {{ tag }}
+    docker push {{ image_tag }}
 
 extract-from-digests:
     #!/usr/bin/env bash
@@ -50,3 +52,6 @@ extract-from-digests:
         docker cp "${container_id}:/usr/local/bin/kuberift" "/tmp/bins/${name}"
         docker rm "${container_id}"
     done
+
+replace-version:
+    rg -g '!justfile' "{{ version_placeholder }}" -l | xargs -I {} sed -i '' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
