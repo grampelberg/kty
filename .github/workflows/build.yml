@@ -1,14 +1,11 @@
 name: build
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - v*
   pull_request:
     branches:
       - main
+
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,7 +16,7 @@ env:
 
 concurrency:
   group: |-
-    ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -121,8 +118,7 @@ jobs:
           file: docker/kuberift.dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          # push: ${{ github.event_name != 'pull_request' }}
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           outputs: |-
             type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true
 
@@ -139,118 +135,3 @@ jobs:
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
-
-  merge:
-    runs-on: ubuntu-latest
-
-    if: ${{ github.event_name != 'pull_request' }}
-
-    permissions:
-      packages: write
-
-    needs:
-      - docker
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: fetch digests
-        uses: actions/download-artifact@v4
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-
-      - name: buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.IMAGE }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=unstable,enable={{is_default_branch}}
-            type=sha
-
-      - name: login
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: jdx/mise-action@v2
-        with:
-          experimental: true
-          mise_toml: |
-            [tools]
-            just = "latest"
-
-      - name: extract binary
-        run: just extract-from-digests
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' }}
-        with:
-          name: kuberift-docker-binaries
-          path: /tmp/bins/*
-          retention-days: 1
-
-      - name: push image
-        working-directory: /tmp/digests
-        run: |
-          cp */* .
-          rm -rf digests-*
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
-
-      - name: inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
-
-  release:
-    runs-on: ubuntu-latest
-    needs:
-      - binary
-      - merge
-
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          path: /tmp/binaries
-          pattern: kuberift-*
-          merge-multiple: true
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
-
-      - name: changelog
-        run: git cliff -o CHANGELOG.md -l
-
-      - name: versioned release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          body_path: CHANGELOG.md
-          files: |-
-            /tmp/binaries/*
-
-      - name: unstable release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
-        with:
-          body_path: CHANGELOG.md
-          name: unstable
-          prerelease: true
-          tag_name: main
-          files: |-
-            /tmp/binaries/*
