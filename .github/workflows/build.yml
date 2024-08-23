@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   binary:
-    runs-on: ${{ matrix.host_os }}
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       matrix:
@@ -31,7 +31,7 @@ jobs:
 
         include:
           - arch: arm64
-            host_os: macos-latest
+            runner: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +68,7 @@ jobs:
           retention-days: 1
 
   docker:
-    runs-on: ${{ matrix.host_os }}
+    runs-on: ${{ matrix.runner }}
 
     permissions:
       packages: write
@@ -79,11 +79,14 @@ jobs:
         arch:
           - amd64
           # The emulated arm64 builds are painfully slow (90m last time). Skip them until we have dedicated linux-arm64 hardware.
-          # - arm64
+          - arm64
 
         include:
           - arch: amd64
-            host_os: ubuntu-latest
+            runner: ubuntu-latest
+
+          - arch: arm64
+            runner: buildjet-4vcpu-ubuntu-2204-arm
 
     steps:
       - uses: actions/checkout@v4

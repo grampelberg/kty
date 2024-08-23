@@ -45,10 +45,12 @@ extract-from-digests:
 
     for digest in /tmp/digests/*/*; do
         sha="$(basename "${digest}")"
-        name="kuberift-$(basename $(dirname "${digest}") | cut -d- -f2-)"
+        bucket="$(basename $(dirname "${digest}"))"
+        IFS=- read -r _ os arch <<< "${bucket}"
+        name="kuberift-${os}-${arch}"
         echo "Extracting {{ image }}@sha256:${sha}"
 
-        container_id="$(docker create {{ image }}@sha256:${sha})"
+        container_id="$(docker create --platform=${os}/${arch} {{ image }}@sha256:${sha})"
         docker cp "${container_id}:/usr/local/bin/kuberift" "/tmp/bins/${name}"
         docker rm "${container_id}"
     done
