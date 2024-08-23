@@ -97,6 +97,11 @@ rules:
   across the entire cluster. This will be updated in the future but requires
   namespaces to be available via UI elements.
 
+## Releases
+
+- See releases for the latest tagged release.
+- The `unstable` tag is updated on every merge to main.
+
 ## TODO
 
 - Groups are probably what most users are going to want to use to configure all

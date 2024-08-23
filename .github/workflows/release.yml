@@ -131,6 +131,6 @@ jobs:
           body_path: CHANGELOG.md
           name: unstable
           prerelease: true
-          tag_name: main
+          tag_name: unstable
           files: |-
             /tmp/binaries/*

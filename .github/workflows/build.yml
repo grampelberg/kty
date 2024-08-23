@@ -53,7 +53,11 @@ jobs:
           tool: just,git-cliff,ripgrep
 
       - name: build
-        run: just replace-version build-binary
+        run: |
+          just --evaluate version
+          just set-version
+          cargo pkgid
+          just build-binary
 
       - name: rename
         run: |-
@@ -91,7 +95,7 @@ jobs:
         with:
           tool: just,git-cliff,ripgrep
       - name: set version
-        run: just replace-version
+        run: just set-version
 
       - name: meta
         id: meta
