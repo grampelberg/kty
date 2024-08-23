@@ -35,6 +35,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install toolchain
         run: |-
           rustup show active-toolchain
@@ -46,9 +48,12 @@ jobs:
       # - uses: jdx/mise-action@v2
       #   with:
       #     experimental: true
-      - uses: taiki-e/install-action@just
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff,ripgrep
+
       - name: build
-        run: just build-binary
+        run: just replace-version build-binary
 
       - name: rename
         run: |-
@@ -79,6 +84,15 @@ jobs:
             host_os: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff,ripgrep
+      - name: set version
+        run: just replace-version
+
       - name: meta
         id: meta
         uses: docker/metadata-action@v5
@@ -107,6 +121,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
+          context: .
           platforms: ${{ matrix.os }}/${{ matrix.arch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
