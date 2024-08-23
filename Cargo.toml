@@ -11,7 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.0-UNSTABLE"
 authors = ["Thomas Rampelberg <thomas@saunter.org>"]
 documentation = "https://github.com/grampelberg/kubrift"
 edition = "2021"

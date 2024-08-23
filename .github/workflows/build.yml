@@ -46,12 +46,7 @@ jobs:
       # - uses: jdx/mise-action@v2
       #   with:
       #     experimental: true
-      - uses: jdx/mise-action@v2
-        with:
-          experimental: true
-          mise_toml: |
-            [tools]
-            just = "latest"
+      - uses: taiki-e/install-action@just
       - name: build
         run: just build-binary
 
