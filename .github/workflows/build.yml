@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-tags: true
       - name: Install toolchain
         run: |-
           rustup show active-toolchain
@@ -50,10 +50,11 @@ jobs:
       #     experimental: true
       - uses: taiki-e/install-action@v2
         with:
-          tool: just,git-cliff,ripgrep
+          tool: just,git-cliff
 
       - name: build
-        run: just replace-version build-binary
+        run: |
+          just set-version build-binary
 
       - name: rename
         run: |-
@@ -86,12 +87,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-tags: true
       - uses: taiki-e/install-action@v2
         with:
-          tool: just,git-cliff,ripgrep
+          tool: just,git-cliff
       - name: set version
-        run: just replace-version
+        run: just set-version
 
       - name: meta
         id: meta

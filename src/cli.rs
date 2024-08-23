@@ -25,6 +25,7 @@ use tracing_subscriber::{filter::EnvFilter, prelude::*};
 pub(crate) static LEVEL: OnceLock<LevelFilter> = OnceLock::new();
 
 #[derive(Parser, Container)]
+#[command(about, version)]
 pub struct Root {
     #[command(subcommand)]
     command: RootCmd,
