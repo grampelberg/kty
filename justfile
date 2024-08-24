@@ -9,7 +9,7 @@ yellow := '\033[33m'
 
 git_version := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 is_unstable := `git tag --points-at | grep 'v' && echo "" || echo "-UNSTABLE"`
-version := `git cliff --bumped-version --tag-pattern "v.*" 2>/dev/null | cut -c2- || echo "0.0.0"` + is_unstable
+version := `git cliff --bumped-version 2>/dev/null | cut -c2- || echo "0.0.0"` + is_unstable
 version_placeholder := "0.0.0-UNSTABLE"
 
 # Docker settings

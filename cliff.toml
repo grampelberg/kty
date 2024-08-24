@@ -69,7 +69,7 @@ protect_breaking_commits = false
 # filter out the commits that are not matched by commit parsers
 filter_commits = false
 # regex for matching git tags
-# tag_pattern = "v[0-9].*"
+tag_pattern = "v*"
 # regex for skipping tags
 # skip_tags = ""
 # regex for ignoring tags
@@ -80,6 +80,3 @@ topo_order = false
 sort_commits = "oldest"
 # limit the number of commits included in the changelog.
 # limit_commits = 42
-
-[bump]
-initial_tag = "v0.1.0"
