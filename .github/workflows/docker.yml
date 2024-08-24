@@ -29,6 +29,7 @@ env:
 
 jobs:
   build:
+    name: 'docker (${{ inputs.os }}, ${{ inputs.arch }})'
     runs-on: ${{ inputs.runner }}
 
     permissions:
