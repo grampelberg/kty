@@ -26,6 +26,21 @@ spec:
 
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: kuberift-server
+  labels:
+    {{- include "labels" (dict "name" "kuberift-server" "component" "server" "global" $) | nindent 4 }}
+data:
+  {{- $old_sec := lookup "v1" "Secret" $.Release.Namespace "kuberift-server" }}
+
+  {{- if or (not $old_sec) (not $old_sec.data) }}
+  id_ed25519: {{ genPrivateKey "ed25519" | b64enc }}
+  {{ else }}
+  id_ed25519: {{ index $old_sec.data "id_ed25519" }}
+  {{ end }}
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: server
@@ -69,6 +84,7 @@ spec:
             - serve
             - -vv
             - --address=0.0.0.0:2222
+            - --key=/etc/kuberift/key/id_ed25519
 
           {{- with .openid -}}
           env:
@@ -84,5 +100,15 @@ spec:
           resources:
             {{- toYaml .resources | nindent 12 }}
           {{- end }}
+
+          volumeMounts:
+            - mountPath: /etc/kuberift/key
+              name: host-key
+              readOnly: true
+
+      volumes:
+        - name: host-key
+          secret:
+            secretName: kuberift-server
 {{- end }}
 {{- end }}
