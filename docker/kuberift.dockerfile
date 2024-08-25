@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y wget gpg lsb-release && \
     echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" \
     | tee /etc/apt/sources.list.d/prebuilt-mpr.list
 RUN apt-get update && apt-get install -y \
+    git \
     just \
     libssl-dev \
     pkg-config
