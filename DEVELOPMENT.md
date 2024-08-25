@@ -1,5 +1,13 @@
 # Development
 
+## Commits
+
+We try to use [conventional commits][conventional commits]. This allows
+[git-cliff][git-cliff] to construct a chagelog on release.
+
+[conventional commits]: https://www.conventionalcommits.org/en/v1.0.0/
+[git-cliff]: https://git-cliff.org
+
 ## CI
 
 On PR, CI produces a darwin-arm64 binary and helm chart. Click on any step from
