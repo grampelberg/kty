@@ -14,6 +14,7 @@ mod widget;
 use cata::execute;
 use clap::Parser;
 use eyre::Result;
+use tokio::signal::unix::{signal, SignalKind};
 
 use crate::cli::Root;
 
@@ -24,5 +25,11 @@ async fn main() -> Result<()> {
         .display_location_section(false)
         .install()?;
 
-    execute(&Root::parse()).await
+    let root = Root::parse();
+    let mut sigterm = signal(SignalKind::terminate())?;
+
+    tokio::select! {
+        _ = sigterm.recv() => Ok(()),
+        result = execute(&root) => result,
+    }
 }
