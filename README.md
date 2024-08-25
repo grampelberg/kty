@@ -30,8 +30,13 @@ There is a provided `getting-started.yaml` set of values. To install this on
 your cluster, you can run:
 
 ```bash
-helm install kuberift oci://ghcr.io/grampelberg/kuberift -n kuberift --create-namespace
+helm install kuberift oci://ghcr.io/grampelberg/helm/kuberift \
+  -n kuberift --create-namespace \
+  --version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
+  -f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
 ```
+
+Note: this exposes the kuberift service externally by default.
 
 For more detailed instructions, take a look at the [README][helm-readme].
 
@@ -154,7 +159,5 @@ rules:
   handled in the provider backend and it is unclear how easy that'll be. It is
   possible in auth0, so I'll go down this route for now.
 
-- Stabilize the host key by using a cert that all the pods share.
-- Correctly handle SIGTERM.
 - Add prometheus metrics.
 - Implement readiness/liveness probes.
