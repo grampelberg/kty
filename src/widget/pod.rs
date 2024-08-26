@@ -19,7 +19,7 @@ use super::{
     propagate,
     table::{DetailFn, Table},
     tabs::TabbedView,
-    Widget,
+    Widget, WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -36,6 +36,8 @@ pub struct List {
 
 impl List {
     pub fn new(client: kube::Client) -> Self {
+        WIDGET_VIEWS.pod.list.inc();
+
         let pods = Arc::new(Store::new(client.clone()));
 
         Self {
@@ -112,6 +114,8 @@ struct Detail {
 
 impl Detail {
     fn new(client: &kube::Client, pod: Arc<Pod>) -> Self {
+        WIDGET_VIEWS.pod.detail.inc();
+
         let view = TabbedView::new(vec![
             Yaml::tab("Overview".to_string(), pod.clone()),
             Log::tab("Logs".to_string(), client.clone(), pod.clone()),

@@ -7,7 +7,7 @@ use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
 use tokio::{sync::mpsc, task::JoinHandle};
 
-use super::{tabs::Tab, Widget};
+use super::{tabs::Tab, Widget, WIDGET_VIEWS};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Log {
@@ -33,6 +33,8 @@ pub struct Log {
 //   probably be an "editor" widget that takes something to populate the lines.
 impl Log {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
+        WIDGET_VIEWS.pod.log.inc();
+
         let (tx, rx) = mpsc::unbounded_channel();
 
         // TODO: this should be a function call.

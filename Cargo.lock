@@ -1956,6 +1956,7 @@ dependencies = [
  "mio 1.0.2",
  "pkcs8",
  "prometheus",
+ "prometheus-static-metric",
  "ratatui",
  "regex",
  "replace_with",
@@ -1969,6 +1970,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_yaml",
  "ssh-key",
+ "strum_macros",
  "syntect",
  "syntect-tui",
  "tokio",
@@ -2761,6 +2763,18 @@ dependencies = [
  "parking_lot",
  "protobuf",
  "thiserror",
+]
+
+[[package]]
+name = "prometheus-static-metric"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8f30cdb09c39930b8fa5e0f23cbb895ab3f766b187403a0ba0956fc1ef4f0e5"
+dependencies = [
+ "lazy_static",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

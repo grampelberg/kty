@@ -9,11 +9,30 @@ use std::{
 
 use eyre::{eyre, Result};
 use futures::{future::BoxFuture, FutureExt};
+use lazy_static::lazy_static;
+use prometheus::{opts, register_int_counter_vec, IntCounterVec};
+use prometheus_static_metric::make_static_metric;
 use russh::{server::Handle, ChannelId, CryptoVec, Disconnect};
 use tokio::io::AsyncWrite;
 use tracing::error;
 
-use crate::ssh::session::ACTIVE_SESSIONS;
+make_static_metric! {
+    pub struct ChannelBytesSentVec: IntCounter {
+        "type" => {
+            blocking,
+            non_blocking,
+        },
+    }
+}
+
+lazy_static! {
+    static ref TOTAL_BYTES_VEC: IntCounterVec = register_int_counter_vec!(
+        opts!("channel_bytes_sent_total", "Total number of bytes sent",),
+        &["type"],
+    )
+    .unwrap();
+    static ref TOTAL_BYTES: ChannelBytesSentVec = ChannelBytesSentVec::from(&TOTAL_BYTES_VEC);
+}
 
 #[derive(Clone)]
 pub struct Channel {
@@ -41,11 +60,6 @@ impl Writer for Channel {
     }
 
     async fn shutdown(&self, msg: String) -> Result<()> {
-        // This is less than ideal, unfortunately the `Handler` interface only works for
-        // incoming client communication and this is being triggered by the server as a
-        // side-effect of user input (like exiting the dashboard).
-        ACTIVE_SESSIONS.dec();
-
         self.handle
             .disconnect(Disconnect::ByApplication, msg, String::new())
             .await?;
@@ -75,6 +89,7 @@ impl SshWriter {
 
 impl std::io::Write for SshWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        TOTAL_BYTES.blocking.inc_by(buf.len() as u64);
         self.buf.extend(buf);
 
         Ok(buf.len())
@@ -110,6 +125,8 @@ impl AsyncWrite for SshWriter {
 
                 let buf = CryptoVec::from_slice(buf);
                 let fut = async move {
+                    TOTAL_BYTES.non_blocking.inc_by(buf.len() as u64);
+
                     handle.data(id, buf).await?;
 
                     Ok(())

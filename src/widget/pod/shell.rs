@@ -1,5 +1,6 @@
 use std::{pin::Pin, sync::Arc, vec};
 
+use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use eyre::{eyre, Result};
 use futures::StreamExt;
@@ -8,6 +9,8 @@ use kube::{
     api::{Api, AttachParams},
     ResourceExt,
 };
+use lazy_static::lazy_static;
+use prometheus::{histogram_opts, register_histogram, Histogram};
 use ratatui::{
     layout::Rect,
     prelude::*,
@@ -32,9 +35,18 @@ use crate::{
         propagate,
         table::{DetailFn, Table},
         tabs::Tab,
-        Raw, Widget,
+        Raw, Widget, WIDGET_VIEWS,
     },
 };
+
+lazy_static! {
+    static ref EXEC_DURATION: Histogram = register_histogram!(histogram_opts!(
+        "container_exec_duration_minutes",
+        "The time spent exec'd into a container in a pod",
+        vec!(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0),
+    ))
+    .unwrap();
+}
 
 pub struct Shell {
     pod: Arc<Pod>,
@@ -43,6 +55,8 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
+        WIDGET_VIEWS.container.list.inc();
+
         let mut table = Table::default().constructor(Command::from_pod(client, pod.clone()));
 
         if pod.as_ref().containers(None).len() == 1 {
@@ -89,6 +103,8 @@ struct Command {
 
 impl Command {
     pub fn new(client: kube::Client, pod: Arc<Pod>, container: Container) -> Self {
+        WIDGET_VIEWS.container.cmd.inc();
+
         let state = CommandState::Input(Command::input(&container));
 
         Self {
@@ -134,6 +150,7 @@ impl Command {
 
                 Ok(Broadcast::Raw(Box::new(
                     ExecBuilder::default()
+                        .start(Utc::now())
                         .client(self.client.clone())
                         .pod(self.pod.clone())
                         .container(self.container.clone())
@@ -268,6 +285,7 @@ impl Widget for Command {
 
 #[derive(Builder)]
 struct Exec {
+    start: DateTime<Utc>,
     client: kube::Client,
     pod: Arc<Pod>,
     container: Container,
@@ -281,6 +299,8 @@ impl Raw for Exec {
         stdin: &mut UnboundedReceiver<Event>,
         mut stdout: Pin<Box<dyn AsyncWrite + Send + Unpin>>,
     ) -> Result<()> {
+        WIDGET_VIEWS.container.exec.inc();
+
         let mut proc = Api::<Pod>::namespaced(self.client.clone(), &self.pod.namespace().unwrap())
             .exec(
                 &self.pod.name_any(),
@@ -296,19 +316,10 @@ impl Raw for Exec {
             )
             .await?;
 
-        let status = proc.take_status().ok_or(eyre!(
-            "status not
-available"
-        ))?;
+        let status = proc.take_status().ok_or(eyre!("status not available"))?;
 
-        let mut output = ReaderStream::new(proc.stdout().ok_or(eyre!(
-            "stdout
-not available"
-        ))?);
-        let mut input = proc.stdin().ok_or(eyre!(
-            "stdin
-not available"
-        ))?;
+        let mut output = ReaderStream::new(proc.stdout().ok_or(eyre!("stdout not available"))?);
+        let mut input = proc.stdin().ok_or(eyre!("stdin not available"))?;
 
         // TODO: handle resize events.
         loop {
@@ -354,5 +365,17 @@ not available"
         proc.join().await?;
 
         Ok(())
+    }
+}
+
+impl Drop for Exec {
+    fn drop(&mut self) {
+        EXEC_DURATION.observe(
+            (Utc::now() - self.start)
+                .to_std()
+                .expect("duration in range")
+                .as_secs_f64()
+                / 60.0,
+        );
     }
 }
