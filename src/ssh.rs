@@ -1,4 +1,4 @@
-mod session;
+pub(crate) mod session;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -6,11 +6,26 @@ use derive_builder::Builder;
 use eyre::Result;
 use k8s_openapi::api::core::v1::ObjectReference;
 use kube::runtime::events::{Event, Recorder, Reporter};
+use lazy_static::lazy_static;
+use prometheus::{register_int_counter, IntCounter};
 use russh::server::{Config, Handler, Server};
 use session::Session;
 use tracing::error;
 
 use crate::openid;
+
+lazy_static! {
+    static ref CLIENT_COUNTER: IntCounter = register_int_counter!(
+        "ssh_clients_total",
+        "Number of clients created by incoming connections",
+    )
+    .unwrap();
+    static ref SESSION_ERRORS: IntCounter = register_int_counter!(
+        "ssh_session_errors_total",
+        "Number of errors encountered by sessions. Note that this does not include IO errors",
+    )
+    .unwrap();
+}
 
 #[derive(Builder)]
 pub struct Controller {
@@ -57,7 +72,6 @@ impl Controller {
 
 #[derive(Clone)]
 pub struct UIServer {
-    id: usize,
     controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
 }
@@ -65,7 +79,6 @@ pub struct UIServer {
 impl UIServer {
     pub fn new(controller: Controller, provider: openid::Provider) -> Self {
         Self {
-            id: 0,
             controller: Arc::new(controller),
             identity_provider: Arc::new(provider),
         }
@@ -82,7 +95,7 @@ impl Server for UIServer {
     type Handler = Session;
 
     fn new_client(&mut self, _: Option<SocketAddr>) -> Self::Handler {
-        self.id += 1;
+        CLIENT_COUNTER.inc();
 
         Session::new(self.controller.clone(), self.identity_provider.clone())
     }
@@ -91,6 +104,8 @@ impl Server for UIServer {
         if let Some(russh::Error::IO(_)) = error.downcast_ref::<russh::Error>() {
             return;
         }
+
+        SESSION_ERRORS.inc();
 
         error!("unhandled session error: {:#?}", error);
     }
