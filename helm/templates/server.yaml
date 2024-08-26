@@ -72,9 +72,9 @@ spec:
       labels:
         {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 8 }}
       annotations:
-        prometheus.io/scrape: true
+        prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
-        prometheus.io/port: 8080
+        prometheus.io/port: "8080"
 
     spec:
       serviceAccountName: kuberift-server
@@ -104,6 +104,15 @@ spec:
           resources:
             {{- toYaml .resources | nindent 12 }}
           {{- end }}
+
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 8080
 
           volumeMounts:
             - mountPath: /etc/kuberift/key
