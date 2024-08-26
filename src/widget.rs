@@ -11,6 +11,9 @@ pub mod yaml;
 use std::pin::Pin;
 
 use eyre::Result;
+use lazy_static::lazy_static;
+use prometheus::{opts, register_int_counter_vec, IntCounterVec};
+use prometheus_static_metric::make_static_metric;
 use ratatui::{
     layout::{Constraint, Rect},
     widgets::Row,
@@ -22,6 +25,35 @@ use crate::{
     events::{Broadcast, Event},
     widget::table::RowStyle,
 };
+
+make_static_metric! {
+    pub struct WidgetVec: IntCounter {
+        "resource" => {
+            container,
+            pod,
+        },
+        "type" => {
+            cmd,
+            detail,
+            exec,
+            list,
+            log,
+            yaml,
+        },
+    }
+}
+
+lazy_static! {
+    pub static ref WIDGET_VIEWS_VEC: IntCounterVec = register_int_counter_vec!(
+        opts!(
+            "widget_views_total",
+            "Number of times a widget has been viewed",
+        ),
+        &["resource", "type"],
+    )
+    .unwrap();
+    pub static ref WIDGET_VIEWS: WidgetVec = WidgetVec::from(&WIDGET_VIEWS_VEC);
+}
 
 pub trait TableRow<'a> {
     fn constraints() -> Vec<Constraint>;

@@ -1,6 +1,8 @@
 use std::borrow::BorrowMut;
 
 use eyre::Result;
+use lazy_static::lazy_static;
+use prometheus::{register_int_counter, IntCounter};
 use ratatui::{
     layout::Rect,
     prelude::*,
@@ -11,6 +13,14 @@ use ratatui::{
 
 use super::{input::Text, propagate, TableRow, Widget};
 use crate::events::{Broadcast, Event, Keypress};
+
+lazy_static! {
+    static ref TABLE_FILTER: IntCounter = register_int_counter!(
+        "table_filter_total",
+        "Number of times a table has been filtered"
+    )
+    .unwrap();
+}
 
 pub struct RowStyle {
     pub healthy: style::Style,
@@ -65,6 +75,8 @@ impl State {
     }
 
     fn filter(&mut self) {
+        TABLE_FILTER.inc();
+
         let state = match self {
             State::List(state) => state.to_owned(),
             _ => TableState::default().with_selected(0),

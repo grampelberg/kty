@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    borrow::Borrow,
+    sync::{Arc, LazyLock},
+};
 
 use eyre::Result;
 use kube::Resource;
@@ -12,7 +15,7 @@ use syntect::{
 };
 use syntect_tui::into_span;
 
-use super::Widget;
+use super::{Widget, WIDGET_VIEWS_VEC};
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::Yaml as YamlResource,
@@ -65,8 +68,12 @@ pub struct Yaml {
 impl Yaml {
     pub fn new<K>(resource: &Arc<K>) -> Self
     where
-        K: Resource + Serialize + Send + Sync + 'static,
+        K: Resource<DynamicType = ()> + Serialize + Send + Sync + 'static,
     {
+        WIDGET_VIEWS_VEC
+            .with_label_values(&[K::kind(&()).borrow(), "yaml"])
+            .inc();
+
         let txt = resource.to_yaml().unwrap();
 
         Self {
@@ -80,7 +87,7 @@ impl Yaml {
 
     pub fn tab<K>(name: String, resource: Arc<K>) -> Tab
     where
-        K: Resource + Serialize + Send + Sync + 'static,
+        K: Resource<DynamicType = ()> + Serialize + Send + Sync + 'static,
     {
         Tab::new(name, Box::new(move || Box::new(Self::new(&resource))))
     }
