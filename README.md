@@ -197,7 +197,6 @@ rules:
   handled in the provider backend and it is unclear how easy that'll be. It is
   possible in auth0, so I'll go down this route for now.
 
-- Implement readiness/liveness probes.
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be
   crazy for cardinality.
