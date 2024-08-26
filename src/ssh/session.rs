@@ -6,6 +6,8 @@ use std::{
 
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
+use lazy_static::lazy_static;
+use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use ratatui::{backend::WindowSize, layout::Size};
 use replace_with::replace_with_or_abort;
 use russh::{
@@ -23,6 +25,13 @@ use crate::{
     openid,
     ssh::{Authenticate, Controller},
 };
+
+lazy_static! {
+    static ref TOTAL_SESSIONS: IntCounter =
+        register_int_counter!("session_total", "Total number of sessions").unwrap();
+    pub(crate) static ref ACTIVE_SESSIONS: IntGauge =
+        register_int_gauge!("active_sessions", "Number of active sessions").unwrap();
+}
 
 #[derive(Debug)]
 pub enum State {
@@ -251,6 +260,9 @@ impl server::Handler for Session {
         _: russh::Channel<server::Msg>,
         _: &mut server::Session,
     ) -> Result<bool> {
+        TOTAL_SESSIONS.inc();
+        ACTIVE_SESSIONS.inc();
+
         self.state.channel_opened();
 
         Ok(true)
@@ -293,6 +305,8 @@ impl server::Handler for Session {
     }
 
     async fn channel_close(&mut self, _: ChannelId, _: &mut server::Session) -> Result<()> {
+        ACTIVE_SESSIONS.dec();
+
         if let State::PtyStarted(dashboard) = &mut self.state {
             dashboard.stop().await?;
         };

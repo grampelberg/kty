@@ -13,6 +13,8 @@ use russh::{server::Handle, ChannelId, CryptoVec, Disconnect};
 use tokio::io::AsyncWrite;
 use tracing::error;
 
+use crate::ssh::session::ACTIVE_SESSIONS;
+
 #[derive(Clone)]
 pub struct Channel {
     id: ChannelId,
@@ -39,6 +41,11 @@ impl Writer for Channel {
     }
 
     async fn shutdown(&self, msg: String) -> Result<()> {
+        // This is less than ideal, unfortunately the `Handler` interface only works for
+        // incoming client communication and this is being triggered by the server as a
+        // side-effect of user input (like exiting the dashboard).
+        ACTIVE_SESSIONS.dec();
+
         self.handle
             .disconnect(Disconnect::ByApplication, msg, String::new())
             .await?;

@@ -4,6 +4,7 @@
 mod cli;
 mod dashboard;
 mod events;
+mod health;
 mod identity;
 mod io;
 mod openid;

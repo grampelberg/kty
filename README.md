@@ -42,6 +42,14 @@ For more detailed instructions, take a look at the [README][helm-readme].
 
 [helm-readme]: helm/README.md
 
+## Metrics
+
+- ssh_clients_total - Number of incoming connections.
+- ssh_session_errors_total - Number of non-IO related unhandled errors at the
+  session level.
+- session_total - Number of sessions created.
+- active_sessions - Number of currently active sessions.
+
 ## Identity (Authentication)
 
 Access is managed via k8s' RBAC system. This is managed with `User` and `Group`
@@ -159,5 +167,5 @@ rules:
   handled in the provider backend and it is unclear how easy that'll be. It is
   possible in auth0, so I'll go down this route for now.
 
-- Add prometheus metrics.
+- Add metrics around auth and data.
 - Implement readiness/liveness probes.

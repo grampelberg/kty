@@ -44,8 +44,10 @@ json_value_merge = "2.0.0"
 jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
 kube = { version = "0.93.1", features = ["derive", "runtime", "ws"] }
+lazy_static = "1.5.0"
 mio = "1.0.2"
 pkcs8 = "0.10.2"
+prometheus = "0.13.4"
 ratatui = { version = "0.27.0", features = [
     "unstable-rendered-line-info",
     "unstable-widget-ref",
@@ -70,6 +72,7 @@ tracing = "0.1.40"
 tracing-error = { version = "0.2.0", features = ["traced-error"] }
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+warp = "0.3.7"
 
 
 [lints]

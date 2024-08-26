@@ -71,6 +71,10 @@ spec:
     metadata:
       labels:
         {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: true
+        prometheus.io/path: /metrics
+        prometheus.io/port: 8080
 
     spec:
       serviceAccountName: kuberift-server
@@ -83,7 +87,7 @@ spec:
           args:
             - serve
             - -vv
-            - --address=0.0.0.0:2222
+            - --address=0.0.0.0
             - --key=/etc/kuberift/key/id_ed25519
 
           {{- with .openid -}}
