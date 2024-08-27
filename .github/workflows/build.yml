@@ -44,6 +44,8 @@ jobs:
           tool: just,git-cliff
 
       - name: build
+        env:
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
         run: |
           just set-version build-binary
 

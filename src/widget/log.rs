@@ -32,6 +32,8 @@ pub struct Log {
 //   as the yaml widget - but without the syntax highlighting. There should
 //   probably be an "editor" widget that takes something to populate the lines.
 impl Log {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(skip(client, pod), fields(activity = "pod.logs"))]
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.pod.log.inc();
 

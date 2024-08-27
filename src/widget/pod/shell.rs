@@ -294,6 +294,8 @@ struct Exec {
 
 #[async_trait::async_trait]
 impl Raw for Exec {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(skip(self, stdin, stdout), fields(activity = "pod.exec"))]
     async fn start(
         &mut self,
         stdin: &mut UnboundedReceiver<Event>,
