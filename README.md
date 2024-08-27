@@ -42,6 +42,21 @@ For more detailed instructions, take a look at the [README][helm-readme].
 
 [helm-readme]: helm/README.md
 
+### Bring Your Own Provider
+
+By default, kuberift provides a hosted provider through [auth0][auth0] that
+provides Github and Google authentication. To get your own setup using auth0,
+check out their [instructions][auth0-setup].
+
+You can, alternatively, use your own provider. It must support the [device
+code][device-code] flow and have a URL that has the openid configuration. Take a
+look at the configuration for `kuberift serve` for the required values.
+
+[auth0]: https://auth0.com
+[auth0-setup]:
+  https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow/call-your-api-using-the-device-authorization-flow#prerequisites
+[device-code]: https://www.oauth.com/oauth2-servers/device-flow/
+
 ## Metrics
 
 - bytes_received_total - Total number of bytes received. This should be keyboard

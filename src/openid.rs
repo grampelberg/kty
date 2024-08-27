@@ -82,7 +82,6 @@ impl Config {
 
 #[derive(Clone, Debug, Builder)]
 pub struct Provider {
-    audience: String,
     client_id: String,
     claim: String,
 
@@ -97,7 +96,6 @@ impl Provider {
             .form(&[
                 ("client_id", self.client_id.clone()),
                 ("scope", "openid email".to_string()),
-                ("audience", self.audience.clone()),
             ])
             .send()
             .await?
@@ -160,7 +158,6 @@ impl Provider {
 
         let validation = {
             let mut validation = jsonwebtoken::Validation::new(header.alg);
-            validation.set_audience(&[self.audience.as_str()]);
             validation.validate_exp = false;
             validation.validate_aud = false;
             validation
