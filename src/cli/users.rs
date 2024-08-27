@@ -44,6 +44,8 @@ pub struct Check {
 
 #[async_trait::async_trait]
 impl Command for Check {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "users.check"))]
     async fn run(&self) -> Result<()> {
         let identity = Identity::new(self.id.clone(), self.groups.clone());
 
@@ -86,6 +88,8 @@ pub struct Grant {
 // point and remove the direct ratatui dependency.
 #[async_trait::async_trait]
 impl Command for Grant {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "users.grant"))]
     async fn run(&self) -> Result<()> {
         let binding = ClusterRoleBinding {
             metadata: ObjectMeta {
@@ -157,6 +161,8 @@ pub struct Key {
 
 #[async_trait::async_trait]
 impl Command for Key {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "users.key"))]
     async fn run(&self) -> Result<()> {
         let mut keys: Vec<PublicKey> = self
             .keys

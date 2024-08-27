@@ -50,6 +50,8 @@ pub struct Delete {}
 
 #[async_trait::async_trait]
 impl Command for Delete {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "resources.delete"))]
     async fn run(&self) -> Result<()> {
         let client: &Api<CustomResourceDefinition> = &Api::all(Client::try_default().await?);
 
@@ -92,6 +94,8 @@ pub struct Manifest {}
 
 #[async_trait::async_trait]
 impl Command for Manifest {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "resources.manifest"))]
     async fn run(&self) -> Result<()> {
         let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
         for resource in crate::resources::all() {

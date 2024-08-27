@@ -19,7 +19,8 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN just build-binary
+RUN --mount=type=secret,id=POSTHOG_API_KEY \
+    POSTHOG_API_KEY="$(cat /run/secrets/POSTHOG_API_KEY)" just build-binary
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app

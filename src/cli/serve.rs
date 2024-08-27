@@ -119,6 +119,8 @@ impl Serve {
 
 #[async_trait::async_trait]
 impl Command for Serve {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "serve"))]
     async fn run(&self) -> Result<()> {
         tokio::select! {
             result = self.serve_http() => result,

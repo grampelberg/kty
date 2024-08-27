@@ -5,7 +5,11 @@ mod users;
 
 use std::sync::{Mutex, OnceLock};
 
-use cata::{output::Format, Command, Container};
+use cata::{
+    output::Format,
+    telemetry::{posthog, Telemetry},
+    Command, Container,
+};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use clio::Output;
@@ -14,6 +18,8 @@ use tracing::metadata::LevelFilter;
 use tracing_error::ErrorLayer;
 use tracing_log::AsTrace;
 use tracing_subscriber::{filter::EnvFilter, prelude::*};
+
+static PH_KEY: Option<&str> = option_env!("POSTHOG_API_KEY");
 
 // While tracing allows for you to get the global log filter
 // (`tracing::metadata::LevelFilter::current()`), the
@@ -43,8 +49,13 @@ pub struct Root {
     /// Output format
     #[arg(short, long, value_enum, default_value_t = Format::Pretty, global = true)]
     pub output: Format,
+
+    /// Disable telemetry
+    #[arg(long, global = true)]
+    no_telemetry: bool,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Container)]
 enum RootCmd {
     Dev(dev::Dev),
@@ -75,7 +86,15 @@ impl Command for Root {
             .with(fmt)
             .with(ErrorLayer::default());
 
-        registry.init();
+        if self.no_telemetry {
+            registry.init();
+        } else {
+            let telemetry = Telemetry::new(posthog::Posthog::new(PH_KEY.unwrap_or_default()))
+                .with_activity()
+                .with_errors();
+
+            registry.with(telemetry).init();
+        }
 
         Ok(())
     }

@@ -72,12 +72,18 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: docker/kuberift.dockerfile
           platforms: ${{ inputs.os }}/${{ inputs.arch }}
+
           cache-from: type=registry,ref=${{ env.CACHE }}
           cache-to: type=registry,ref=${{ env.CACHE }},mode=max
-          file: docker/kuberift.dockerfile
+
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+
+          secrets: |
+            POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
+
           push: ${{ github.event_name != 'pull_request' }}
           outputs: |-
             type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true
