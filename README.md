@@ -1,5 +1,45 @@
 # kuberift
 
+## Getting Started
+
+1. Download the [cli][cli-download] and add it to your `$PATH`.
+1. Get a k8s cluster. [k3d][k3d] is a convenient way to get a cluster up and
+   running fast. Follow their [installation] instructions and create a default
+   cluster.
+1. Grant your email address access to the cluster. Choose `cluster-admin` if
+   you'd like something simple to check out how things work. For more details on
+   the minimum possible permissions, read the [Authorization] section. The email
+   address is what you'll be using to authenticate against. It can either be the
+   one associated with a google or github account. Note, the ID used for login
+   and the providers available can all be configured.
+
+```bash
+kuberift users grant <cluster-role> <email-address>
+```
+
+1. Start the server.
+
+```bash
+kuberift --serve
+```
+
+1. SSH into your cluster!
+
+```bash
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 me@localhost
+```
+
+From this point, here's a few suggestions for things to check out:
+
+- Start a new pod. It'll show up in the dashboard immediately!
+- Exec into a pod. Select the pod you want and go to the `Shell` tab. You'll be
+  able to pick the command to exec and then be shell'd into the pod directly.
+- Follow the logs. Logs for all containers in a pod are streamed to the `Logs`
+  tab when you've selected a pod from the main list.
+
+[cli-download]: https://github.com/grampelberg/kuberift/releases
+[k3d]: https://k3d.io
+
 ## Deployment
 
 The `kuberift` server needs access to your cluster's API server and credentials
@@ -31,12 +71,17 @@ your cluster, you can run:
 
 ```bash
 helm install kuberift oci://ghcr.io/grampelberg/helm/kuberift \
-  -n kuberift --create-namespace \
-  --version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
-  -f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
+-n kuberift --create-namespace \
+--version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
+-f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
 ```
 
-Note: this exposes the kuberift service externally by default.
+Note: this exposes the kuberift service externally by default. To get that IP
+address, you can run:
+
+```bash
+kubectl -n kuberift get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
 
 For more detailed instructions, take a look at the [README][helm-readme].
 
@@ -44,9 +89,9 @@ For more detailed instructions, take a look at the [README][helm-readme].
 
 ### Bring Your Own Provider
 
-By default, kuberift provides a hosted provider through [auth0][auth0] that
-provides Github and Google authentication. To get your own setup using auth0,
-check out their [instructions][auth0-setup].
+By default, kuberift provides Github and Google authentication via.
+[auth0][auth0]. To get your own setup using auth0, check out their
+[instructions][auth0-setup].
 
 You can, alternatively, use your own provider. It must support the [device
 code][device-code] flow and have a URL that has the openid configuration. Take a
@@ -124,10 +169,10 @@ kuberift users check foo@bar.com
 
 ## Authorization
 
-To be authorized, either the user from the identity or one of the groups that
-user is a member of need to have role bindings added to the cluster. The
-`kuberift users grant` command is one way to go about this, but it is purposely
-naive. To do something more flexible, you can check out `kubectl`:
+To be authorized, either the name or groups for a user need to have role
+bindings added to the cluster. The `kuberift users grant` command is one way to
+go about this, but it is purposely naive. To do something more flexible, you can
+check out `kubectl`:
 
 ```bash
 kubectl create clusterrolebinding foo-bar-com --clusterrole=<my-role> --user=foo@bar.com
@@ -138,11 +183,21 @@ the design decisions section for an explanation of what's happening there.
 
 ## Server RBAC
 
+The kuberift server needs to be able to:
+
+- Impersonate users and groups.
+- Manage `keys`.
+- Optionally update the CRDs.
+
+To do the minimum of this, you can use the following `ClusterRole` + `Role`. For
+a more in-depth example, take a look at the
+[helm config](helm/templates/rbac.yaml).
+
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: impersonator
+name: impersonator
 rules:
   - apiGroups:
       - ''
@@ -159,7 +214,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: kuberift
+name: kuberift
 rules:
   - apiGroups:
       - 'key.kuberift.com'
@@ -203,15 +258,19 @@ rules:
   this. The closest to the OpenID spec would be via adding extra scopes that add
   the data required to the token and then map back to a group. Imagine:
 
-  ```yaml
-  user: email
-  group: https://myapp.example.com/group
-  ```
+```yaml
+user: email
+group: https://myapp.example.com/group
+```
 
-  The downside to using this kind of configuration is that it'll need to be
-  handled in the provider backend and it is unclear how easy that'll be. It is
-  possible in auth0, so I'll go down this route for now.
+The downside to using this kind of configuration is that it'll need to be
+handled in the provider backend and it is unclear how easy that'll be. It is
+possible in auth0, so I'll go down this route for now.
 
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be
   crazy for cardinality.
+
+```
+
+```
