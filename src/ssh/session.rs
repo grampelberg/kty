@@ -25,7 +25,7 @@ use tracing::debug;
 use crate::{
     dashboard::Dashboard,
     events::Event,
-    identity::key::Key,
+    identity::{key::Key, Identity},
     io::Channel,
     openid,
     ssh::{Authenticate, Controller},
@@ -128,6 +128,7 @@ pub enum State {
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
+    InvalidIdentity(Identity, Option<PublicKey>),
     Authenticated(DebugClient, String),
     ChannelOpen(DebugClient),
     PtyStarted(Dashboard),
@@ -155,6 +156,7 @@ impl State {
     fn code_sent(&mut self, code: &openid::DeviceCode) {
         let key = match self {
             State::KeyOffered(key) => Some(key.clone()),
+            State::InvalidIdentity(_, key) => key.clone(),
             _ => None,
         };
 
@@ -176,6 +178,15 @@ impl State {
                 *self = State::Unauthenticated;
             }
         }
+    }
+
+    fn invalid_identity(&mut self, identity: Identity) {
+        let key = match self {
+            State::KeyOffered(key) => Some(key.clone()),
+            _ => None,
+        };
+
+        *self = State::InvalidIdentity(identity, key);
     }
 
     fn authenticated(&mut self, client: kube::Client, method: String) {
@@ -243,6 +254,16 @@ impl Session {
     async fn send_code(&mut self) -> Result<Auth> {
         CODE_GENERATED.inc();
 
+        let preface = if let State::InvalidIdentity(id, _) = &self.state {
+            format!(
+                "\nAuthenticated ID is invalid:\n- name: {}\n- groups: {}\n--------------------\n",
+                id.name,
+                id.groups.join(", ")
+            )
+        } else {
+            String::new()
+        };
+
         let code = self.identity_provider.code().await?;
 
         self.state.code_sent(&code);
@@ -252,7 +273,7 @@ impl Session {
         let login_url = QRBuilder::new(uri.clone()).build().unwrap().to_str();
 
         let instructions =
-            "\nLogin or scan the QRCode below to validate your identity:\n".to_string();
+            format!("{preface}\nLogin or scan the QRCode below to validate your identity:\n");
 
         let prompt = format!("\n{login_url}\n\n{uri}\n\nPress Enter to continue");
 
@@ -294,9 +315,8 @@ impl Session {
         let Some(user_client) = id.authenticate(&self.controller).await? else {
             AUTH_RESULTS.interactive.reject.inc();
 
-            // TODO: this isn't great, rejection likely shouldn't be an event either but
-            // it has negative implications. There needs to be some way to debug what's
-            // happening though. Maybe a debug log level is enough?
+            self.state.invalid_identity(id);
+
             return Ok(Auth::Reject {
                 proceed_with_methods: None,
             });
@@ -352,7 +372,9 @@ impl server::Handler for Session {
         AUTH_ATTEMPTS.interactive.inc();
 
         match self.state {
-            State::Unauthenticated | State::KeyOffered(_) => self.send_code().await,
+            State::Unauthenticated | State::KeyOffered(_) | State::InvalidIdentity(_, _) => {
+                self.send_code().await
+            }
             State::CodeSent(..) => self.authenticate_code().await,
             _ => {
                 UNEXPECTED_STATE
