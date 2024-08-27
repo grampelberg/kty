@@ -92,8 +92,6 @@ spec:
 
           {{- with .openid -}}
           env:
-            - name: KUBERIFT_AUDIENCE
-              value: {{ .audience }}
             - name: KUBERIFT_CLIENT_ID
               value: {{ .clientID }}
             - name: KUBERIFT_OID_CONFIG_URL

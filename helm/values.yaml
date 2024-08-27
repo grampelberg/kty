@@ -9,9 +9,8 @@ server:
 
   # Uncomment to configure your own openid provider.
   # openid:
-  #   audience: https://kuberift.com
   #   clientID: fix-me
-  #   configURL: https://kuberift.auth0.com/.well-known/openid-configuration
+  #   configURL: https://kuberift.us.auth0.com/.well-known/openid-configuration
 
   # Make the service a load balancer so that it gets an external IP address if your cluster supports it.
   # loadbalancer: true
