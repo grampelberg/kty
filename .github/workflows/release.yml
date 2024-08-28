@@ -24,6 +24,8 @@ jobs:
       packages: write
 
     uses: ./.github/workflows/build.yml
+    secrets:
+      POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
 
   merge:
     runs-on: ubuntu-latest
@@ -149,7 +151,12 @@ jobs:
           tool: git-cliff
 
       - name: changelog
+        if: startsWith(github.ref, 'refs/tags/')
         run: git cliff -o CHANGELOG.md -l
+
+      - name: changelog
+        if: github.ref == 'refs/heads/main'
+        run: git cliff -o CHANGELOG.md -u
 
       - name: versioned release
         uses: softprops/action-gh-release@v2
