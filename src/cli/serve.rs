@@ -30,10 +30,10 @@ pub struct Serve {
     // TODO(thomas): fetch these from the CRD
     #[clap(long, default_value = "1hr")]
     inactivity_timeout: humantime::Duration,
-    /// Client ID for the OpenID provider that will be used.
+    /// Client ID for the `OpenID` provider that will be used.
     #[clap(long, default_value = CLIENT_ID, env = "KUBERIFT_CLIENT_ID")]
     client_id: String,
-    /// URL to the OpenID configuration. This is how the server knows what
+    /// URL to the `OpenID` configuration. This is how the server knows what
     /// endpoints to use and how to validate tokens.
     #[clap(long, default_value = OID_CONFIG_URL, env = "KUBERIFT_OID_CONFIG_URL")]
     openid_configuration: String,

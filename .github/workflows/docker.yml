@@ -18,6 +18,10 @@ on:
         description: 'Runner to use'
         default: 'ubuntu-latest'
         type: string
+    secrets:
+      POSTHOG_API_KEY:
+        description: 'Posthog API key'
+        required: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -67,7 +71,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: container-build
         id: build
         uses: docker/build-push-action@v6
         with:
