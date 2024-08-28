@@ -70,7 +70,7 @@ impl Widget for Text {
         Ok(Broadcast::Consumed)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let mut block = Block::default().borders(Borders::ALL);
 
         if !self.title.is_empty() {
@@ -84,5 +84,7 @@ impl Widget for Text {
         frame.render_widget(pg, area);
 
         frame.set_cursor(cmd_pos.x + self.pos, cmd_pos.y);
+
+        Ok(())
     }
 }

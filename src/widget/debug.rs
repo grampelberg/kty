@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use eyre::Result;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     text::Text,
@@ -33,7 +34,7 @@ impl Default for Fps {
 impl Widget for Fps {
     #[allow(clippy::cast_possible_wrap)]
     #[allow(clippy::cast_possible_truncation)]
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         self.frames += 1;
 
         let now = Instant::now();
@@ -47,6 +48,8 @@ impl Widget for Fps {
         let fps = self.period.iter().sum::<i32>() / self.period.len() as i32;
 
         frame.render_widget(Text::from(format!("FPS: {fps}")), area);
+
+        Ok(())
     }
 }
 
@@ -64,7 +67,7 @@ impl Default for Debug {
 
 impl Widget for Debug {
     #[allow(clippy::cast_possible_truncation)]
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let [_, area, _] = Layout::horizontal([
             Constraint::Fill(0),
             Constraint::Length(10),
@@ -82,7 +85,9 @@ impl Widget for Debug {
             Layout::vertical(vec![Constraint::Length(1); self.widgets.len()]).split(area);
 
         for (i, widget) in self.widgets.iter_mut().enumerate() {
-            widget.draw(frame, component_areas[i]);
+            widget.draw(frame, component_areas[i])?;
         }
+
+        Ok(())
     }
 }

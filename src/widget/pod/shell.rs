@@ -80,8 +80,8 @@ impl Widget for Shell {
         self.table.dispatch(event)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        self.table.render(frame, area, &self.pod);
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        self.table.draw(frame, area, &self.pod)
     }
 }
 
@@ -180,9 +180,9 @@ impl Command {
         }
     }
 
-    fn draw_input(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_input(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let CommandState::Input(ref mut txt) = self.state else {
-            return;
+            return Ok(());
         };
 
         let [_, area, _] = Layout::vertical([
@@ -199,14 +199,14 @@ impl Command {
         ])
         .areas(area);
 
-        txt.draw(frame, area);
+        txt.draw(frame, area)
     }
 
     // TODO: this should be a separate widget of its own.
-    #[allow(clippy::cast_possible_truncation)]
-    fn draw_error(&mut self, frame: &mut Frame, area: Rect) {
+    #[allow(clippy::cast_possible_truncation, clippy::unnecessary_wraps)]
+    fn draw_error(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let CommandState::Error(ref err) = self.state else {
-            return;
+            return Ok(());
         };
 
         let block = Block::default()
@@ -252,6 +252,8 @@ impl Command {
         }
 
         frame.render_widget(content, vert);
+
+        Ok(())
     }
 }
 
@@ -274,12 +276,14 @@ impl Widget for Command {
         }
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         match self.state {
-            CommandState::Input(_) => self.draw_input(frame, area),
+            CommandState::Input(_) => self.draw_input(frame, area)?,
             CommandState::Attached => {}
-            CommandState::Error(_) => self.draw_error(frame, area),
+            CommandState::Error(_) => self.draw_error(frame, area)?,
         }
+
+        Ok(())
     }
 }
 

@@ -70,11 +70,11 @@ impl Widget for List {
         Ok(Broadcast::Ignored)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         if self.pods.loading() {
             frame.render_widget(&Loading, area);
 
-            return;
+            return Ok(());
         }
 
         if !self.route.is_empty() {
@@ -86,13 +86,13 @@ impl Widget for List {
                     area,
                 );
 
-                return;
+                return Ok(());
             }
 
             self.route.clear();
         }
 
-        self.table.render(frame, area, &self.pods);
+        self.table.draw(frame, area, &self.pods)
     }
 }
 
@@ -165,7 +165,7 @@ impl Widget for Detail {
         Ok(Broadcast::Ignored)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let block = Block::default()
             .borders(Borders::ALL)
             .title(Line::from(self.breadcrumb()));
@@ -174,6 +174,6 @@ impl Widget for Detail {
 
         frame.render_widget(block, area);
 
-        self.view.draw(frame, inner);
+        self.view.draw(frame, inner)
     }
 }

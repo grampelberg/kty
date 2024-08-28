@@ -209,7 +209,9 @@ where
     };
 
     term.draw(|frame| {
-        widget.draw(frame, frame.size());
+        if let Err(err) = widget.draw(frame, frame.size()) {
+            panic!("{err}");
+        }
     })?;
 
     result
