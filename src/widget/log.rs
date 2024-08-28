@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use color_eyre::{Section, SectionExt};
-use eyre::{eyre, Report, Result};
-use futures::{AsyncBufReadExt, TryStreamExt};
+use eyre::{eyre, Report, Result, WrapErr};
+use futures::{future::BoxFuture, AsyncBufReadExt, FutureExt, TryStreamExt};
 use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, mpsc::UnboundedSender},
+    task::JoinHandle,
+};
 
 use super::{tabs::Tab, Widget, WIDGET_VIEWS};
 use crate::events::{Broadcast, Event, Keypress};
@@ -42,26 +45,17 @@ impl Log {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // TODO: this should be a function call.
-        let task = tokio::spawn(async move {
-            let mut stream = Api::<Pod>::namespaced(client, &pod.namespace().unwrap())
-                .log_stream(
-                    &pod.name_any(),
-                    &LogParams {
-                        follow: true,
-                        pretty: true,
-                        previous: true,
-                        ..Default::default()
-                    },
-                )
-                .await?
-                .lines();
-
-            while let Some(line) = stream.try_next().await? {
-                tx.send(line)?;
-            }
-
-            Ok(())
-        });
+        let task = tokio::spawn(log_stream(
+            client,
+            pod,
+            tx,
+            LogParams {
+                follow: true,
+                pretty: true,
+                previous: true,
+                ..Default::default()
+            },
+        ));
 
         Self {
             task,
@@ -182,4 +176,44 @@ impl Drop for Log {
     fn drop(&mut self) {
         self.task.abort();
     }
+}
+
+fn log_stream<'a>(
+    client: kube::Client,
+    pod: Arc<Pod>,
+    tx: UnboundedSender<String>,
+    params: LogParams,
+) -> BoxFuture<'a, Result<()>> {
+    async move {
+        let mut stream = match Api::<Pod>::namespaced(client.clone(), &pod.namespace().unwrap())
+            .log_stream(&pod.name_any(), &params)
+            .await
+        {
+            Ok(stream) => stream.lines(),
+            Err(err) => {
+                let kube::Error::Api(resp) = err else {
+                    return Err(Report::new(err));
+                };
+
+                if resp.message.contains("previous terminated") {
+                    let mut new_params = params.clone();
+
+                    new_params.previous = false;
+
+                    return log_stream(client, pod, tx, new_params).await;
+                }
+
+                tracing::info!("resp: {:#?}", resp);
+
+                return Err(eyre!("fart"));
+            }
+        };
+
+        while let Some(line) = stream.try_next().await? {
+            tx.send(line)?;
+        }
+
+        Ok(())
+    }
+    .boxed()
 }
