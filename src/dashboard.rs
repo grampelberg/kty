@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use eyre::{eyre, Result};
-use ratatui::{backend::Backend as BackendTrait, Terminal};
+use ratatui::{backend::Backend as BackendTrait, widgets::Clear, Terminal};
 use replace_with::replace_with_or_abort;
 use tokio::{
     io::AsyncWrite,
@@ -178,6 +178,11 @@ async fn run(
             _ => {}
         }
     }
+
+    term.draw(|frame| {
+        frame.render_widget(Clear, frame.size());
+        frame.set_cursor(0, 0);
+    })?;
 
     channel.shutdown("exiting...".to_string()).await?;
 
