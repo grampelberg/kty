@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use color_eyre::{Section, SectionExt};
-use eyre::{eyre, Report, Result, WrapErr};
+use eyre::{eyre, Report, Result};
 use futures::{future::BoxFuture, AsyncBufReadExt, FutureExt, TryStreamExt};
-use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
@@ -133,7 +132,7 @@ impl Widget for Log {
             let task = &mut self.task;
 
             match futures::executor::block_on(async move { task.await? }) {
-                Ok(_) => return Err(eyre!("Log task finished unexpectedly")),
+                Ok(()) => return Err(eyre!("Log task finished unexpectedly")),
                 Err(err) => {
                     let Some(kube::Error::Api(resp)) = err.downcast_ref::<kube::Error>() else {
                         return Err(err);
