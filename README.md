@@ -270,4 +270,3 @@ the design decisions section for an explanation of what's happening there.
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be
   crazy for cardinality.
-- Update shell to use the same error widget + handling that tabs are.

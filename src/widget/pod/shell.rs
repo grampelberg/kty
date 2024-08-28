@@ -1,9 +1,11 @@
 use std::{pin::Pin, sync::Arc, vec};
 
 use chrono::{DateTime, Utc};
+use color_eyre::{Section, SectionExt};
 use derive_builder::Builder;
 use eyre::{eyre, Result};
 use futures::StreamExt;
+use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{Api, AttachParams},
@@ -11,13 +13,7 @@ use kube::{
 };
 use lazy_static::lazy_static;
 use prometheus::{histogram_opts, register_histogram, Histogram};
-use ratatui::{
-    layout::Rect,
-    prelude::*,
-    style::{palette::tailwind, Modifier, Style},
-    widgets,
-    widgets::{Block, Borders, Row},
-};
+use ratatui::{layout::Rect, prelude::*};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::mpsc::UnboundedReceiver,
@@ -81,14 +77,17 @@ impl Widget for Shell {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        self.table.draw(frame, area, &self.pod)
+        if let Err(err) = self.table.draw(frame, area, &self.pod) {
+            tracing::info!("failed to draw table: {}", err);
+        }
+
+        Ok(())
     }
 }
 
 enum CommandState {
     Input(Text),
     Attached,
-    Error(String),
 }
 
 static COMMAND: &str = "/bin/bash";
@@ -163,23 +162,6 @@ impl Command {
         }
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    fn dispatch_error(&mut self, event: &Event) -> Result<Broadcast> {
-        if !matches!(self.state, CommandState::Error(_)) {
-            return Ok(Broadcast::Ignored);
-        }
-
-        match event.key() {
-            // TODO: should handle scrolling inside the error message.
-            Some(_) => {
-                self.state = CommandState::Input(Command::input(&self.container));
-
-                Ok(Broadcast::Consumed)
-            }
-            _ => Ok(Broadcast::Ignored),
-        }
-    }
-
     fn draw_input(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let CommandState::Input(ref mut txt) = self.state else {
             return Ok(());
@@ -201,77 +183,40 @@ impl Command {
 
         txt.draw(frame, area)
     }
-
-    // TODO: this should be a separate widget of its own.
-    #[allow(clippy::cast_possible_truncation, clippy::unnecessary_wraps)]
-    fn draw_error(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let CommandState::Error(ref err) = self.state else {
-            return Ok(());
-        };
-
-        let block = Block::default()
-            .title("Error")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Red))
-            .title_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
-
-        // TODO: get this into a variable so that it can be styled.
-        let rows: Vec<Row> = err
-            .split('\n')
-            .enumerate()
-            .map(|(i, line)| {
-                Row::new(vec![
-                    Span::from(format!("{i}: "))
-                        .style(style::Style::default().fg(tailwind::RED.c300)),
-                    Span::from(line),
-                ])
-            })
-            .collect();
-
-        let height = rows.len() as u16 + 2;
-
-        let content =
-            widgets::Table::new(rows, vec![Constraint::Max(3), Constraint::Fill(0)]).block(block);
-
-        let [_, area, _] = Layout::horizontal([
-            Constraint::Max(10),
-            Constraint::Fill(0),
-            Constraint::Max(10),
-        ])
-        .areas(area);
-
-        let [_, mut vert, _] = Layout::vertical([
-            Constraint::Max(10),
-            Constraint::Fill(0),
-            Constraint::Max(10),
-        ])
-        .areas(area);
-
-        if vert.height > height {
-            vert.height = height;
-        }
-
-        frame.render_widget(content, vert);
-
-        Ok(())
-    }
 }
 
 impl Widget for Command {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         propagate!(self.dispatch_input(event));
-        propagate!(self.dispatch_error(event));
 
         match event {
-            Event::Finished(result) => {
-                let Err(err) = result else {
-                    return Ok(Broadcast::Exited);
+            Event::Finished(result) => result.as_ref().map(|()| Broadcast::Exited).map_err(|err| {
+                let Some(err) = err.downcast_ref::<StatusError>() else {
+                    return eyre!(err.to_string());
                 };
 
-                self.state = CommandState::Error(err.to_string());
+                let separated = err.message.splitn(8, ':');
 
-                Ok(Broadcast::Consumed)
-            }
+                eyre!(
+                    "{}",
+                    separated.clone().last().unwrap_or("unknown error").trim()
+                )
+                .section(
+                    separated
+                        .with_position()
+                        .map(|(i, line)| {
+                            let l = line.trim().to_string();
+
+                            match i {
+                                itertools::Position::Middle => format!("├─ {l}"),
+                                itertools::Position::Last => format!("└─ {l}"),
+                                _ => l,
+                            }
+                        })
+                        .join("\n")
+                        .header("Raw:"),
+                )
+            }),
             _ => Ok(Broadcast::Ignored),
         }
     }
@@ -280,7 +225,6 @@ impl Widget for Command {
         match self.state {
             CommandState::Input(_) => self.draw_input(frame, area)?,
             CommandState::Attached => {}
-            CommandState::Error(_) => self.draw_error(frame, area)?,
         }
 
         Ok(())

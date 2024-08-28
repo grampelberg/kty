@@ -12,7 +12,10 @@ use ratatui::{
 };
 
 use super::{input::Text, propagate, TableRow, Widget};
-use crate::events::{Broadcast, Event, Keypress};
+use crate::{
+    events::{Broadcast, Event, Keypress},
+    widget::error::Error,
+};
 
 lazy_static! {
     static ref TABLE_FILTER: IntCounter = register_int_counter!(
@@ -260,12 +263,20 @@ impl Table {
         filter.dispatch(event)
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn dispatch_detail(&mut self, event: &Event) -> Result<Broadcast> {
         let State::Detail(ref mut widget) = self.state.borrow_mut() else {
             return Ok(Broadcast::Ignored);
         };
 
-        widget.dispatch(event)
+        match widget.dispatch(event) {
+            Ok(result) => Ok(result),
+            Err(err) => {
+                self.state.detail(Box::new(Error::new(err)));
+
+                Ok(Broadcast::Consumed)
+            }
+        }
     }
 
     fn handle_route(&mut self, route: &[String]) -> Result<()> {
