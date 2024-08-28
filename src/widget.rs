@@ -71,7 +71,7 @@ pub trait Widget: Send {
         Ok(Broadcast::Ignored)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect);
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>;
 }
 
 impl std::fmt::Debug for Box<dyn Widget> {

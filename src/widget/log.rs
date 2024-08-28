@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use eyre::Result;
+use color_eyre::{Section, SectionExt};
+use eyre::{eyre, Report, Result};
 use futures::{AsyncBufReadExt, TryStreamExt};
+use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
@@ -128,10 +130,27 @@ impl Widget for Log {
         Ok(Broadcast::Consumed)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         self.area = area;
 
         self.update();
+
+        if self.task.is_finished() {
+            let task = &mut self.task;
+
+            match futures::executor::block_on(async move { task.await? }) {
+                Ok(_) => return Err(eyre!("Log task finished unexpectedly")),
+                Err(err) => {
+                    let Some(kube::Error::Api(resp)) = err.downcast_ref::<kube::Error>() else {
+                        return Err(err);
+                    };
+
+                    return Err(
+                        eyre!("{}", resp.message).section(format!("{resp:#?}").header("Raw:"))
+                    );
+                }
+            }
+        }
 
         let (start, end) = if self.follow {
             (
@@ -154,6 +173,8 @@ impl Widget for Log {
 
         let paragraph = Paragraph::new(txt);
         frame.render_widget(paragraph, area);
+
+        Ok(())
     }
 }
 

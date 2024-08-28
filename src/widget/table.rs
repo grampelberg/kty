@@ -130,7 +130,8 @@ impl Table {
         Ok(Broadcast::Consumed)
     }
 
-    fn render_list<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C)
+    #[allow(clippy::unnecessary_wraps)]
+    fn render_list<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C) -> Result<()>
     where
         C: Content<'a, K>,
         K: TableRow<'a>,
@@ -138,7 +139,7 @@ impl Table {
         let (state, filter) = match self.state {
             State::Filtered(ref mut state, ref filter) => (state, Some(filter)),
             State::List(ref mut state) => (state, None),
-            State::Detail(_) => return,
+            State::Detail(_) => return Ok(()),
         };
 
         let items = content.items(filter.map(Text::content));
@@ -173,11 +174,13 @@ impl Table {
         };
 
         frame.render_stateful_widget(table, area, state);
+
+        Ok(())
     }
 
-    fn render_filter(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_filter(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let State::Filtered(_, filter) = self.state.borrow_mut() else {
-            return;
+            return Ok(());
         };
 
         let [_, filter_area] =
@@ -189,15 +192,15 @@ impl Table {
         // buffer. frame.
         frame.render_widget(Clear, filter_area);
 
-        filter.draw(frame, filter_area);
+        filter.draw(frame, filter_area)
     }
 
-    fn render_detail(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_detail(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let State::Detail(ref mut widget) = self.state.borrow_mut() else {
-            return;
+            return Ok(());
         };
 
-        widget.draw(frame, area);
+        widget.draw(frame, area)
     }
 
     pub fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
@@ -275,13 +278,15 @@ impl Table {
         Ok(())
     }
 
-    pub fn render<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C)
+    pub fn draw<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C) -> Result<()>
     where
         C: Content<'a, K>,
         K: TableRow<'a>,
     {
-        self.render_list(frame, area, content);
-        self.render_filter(frame, area);
-        self.render_detail(frame, area);
+        self.render_list(frame, area, content)?;
+        self.render_filter(frame, area)?;
+        self.render_detail(frame, area)?;
+
+        Ok(())
     }
 }

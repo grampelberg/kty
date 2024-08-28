@@ -35,11 +35,11 @@ impl Widget for Apex {
         self.pods.dispatch(event)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         if let Some(debug) = self.debug.as_mut() {
-            debug.draw(frame, area);
+            debug.draw(frame, area)?;
         }
 
-        self.pods.draw(frame, area);
+        self.pods.draw(frame, area)
     }
 }

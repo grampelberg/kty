@@ -1,9 +1,9 @@
-use eyre::{eyre, Result};
+use eyre::{eyre, Report, Result};
 use ratatui::{
     layout::Rect,
     prelude::*,
-    style::{Modifier, Style},
-    widgets::{Block, Borders, Paragraph},
+    style::{palette::tailwind, Modifier, Style},
+    widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -74,7 +74,14 @@ impl Widget for TabbedView {
             return Ok(Broadcast::Consumed);
         }
 
-        propagate!(self.current.dispatch(event), {});
+        propagate!(
+            self.current.dispatch(event),
+            // TODO: this isn't a great solution, it effectively means that if the middle tab has
+            // an error, you can never get to the last tab. It should be possible to navigate
+            // between things when an error is displayed. This gets weird though when you think
+            // about scrolling the error dialog.
+            self.scroll(self.idx.saturating_sub(1))
+        );
 
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
@@ -89,7 +96,7 @@ impl Widget for TabbedView {
         Ok(Broadcast::Consumed)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let [tab_area, border, body_area] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
@@ -124,6 +131,80 @@ impl Widget for TabbedView {
             .horizontal_margin(self.items[self.idx].margin)
             .areas(body_area);
 
-        self.current.draw(frame, nested);
+        if let Err(err) = self.current.draw(frame, nested) {
+            self.current = Box::new(Error::new(err));
+        }
+
+        Ok(())
+    }
+}
+
+struct Error {
+    inner: Report,
+
+    position: (u16, u16),
+}
+
+impl Error {
+    pub fn new(inner: Report) -> Self {
+        Self {
+            inner,
+            position: (0, 0),
+        }
+    }
+}
+
+impl Widget for Error {
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        match event.key() {
+            Some(Keypress::CursorLeft) => {
+                self.position.1 = self.position.1.saturating_sub(1);
+            }
+            Some(Keypress::CursorRight) => {
+                self.position.1 = self.position.1.saturating_add(1);
+            }
+            Some(Keypress::CursorUp) => {
+                self.position.0 = self.position.0.saturating_sub(1);
+            }
+            Some(Keypress::CursorDown) => {
+                self.position.0 = self.position.0.saturating_add(1);
+            }
+            _ => return Ok(Broadcast::Exited),
+        }
+
+        Ok(Broadcast::Consumed)
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red));
+
+        let pg = Paragraph::new(format!("Error:{:?}", self.inner))
+            .block(block)
+            .scroll(self.position);
+
+        let width = pg.line_width() as u16 + 2;
+
+        let [_, area, _] = Layout::horizontal([
+            Constraint::Max(10),
+            Constraint::Max(width),
+            Constraint::Max(10),
+        ])
+        .areas(area);
+
+        let height = pg.line_count(area.width) as u16 + 2;
+
+        let [_, vert, _] = Layout::vertical([
+            Constraint::Max(10),
+            Constraint::Max(height),
+            Constraint::Max(10),
+        ])
+        .areas(area);
+
+        frame.render_widget(pg, vert);
+
+        Ok(())
     }
 }

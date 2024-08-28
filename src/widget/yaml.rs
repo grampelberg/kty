@@ -125,11 +125,13 @@ impl Widget for Yaml {
         Ok(Broadcast::Consumed)
     }
 
-    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         self.area = area;
 
         let lines = to_lines(self.txt.as_str());
 
         frame.render_widget(Paragraph::new(lines).scroll(self.position), area);
+
+        Ok(())
     }
 }
