@@ -1,5 +1,7 @@
 # kuberift
 
+![demo](./assets/demo.gif)
+
 ## Getting Started
 
 1. Download the [cli][cli-download] and add it to your `$PATH`.
