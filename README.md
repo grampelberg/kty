@@ -1,5 +1,16 @@
 # kuberift
 
+SSH into your Kubernetes cluster! kuberift is an SSH server that provides a
+TUI-based dashboard in your cluster. There's no need to manage SSH keys however.
+It works with OpenID providers, such as Github or Google and impersonates users
+to provide them with the same permissions they normally would have - all based
+on the standard RBAC mechanisms.
+
+You can:
+
+- Get a shell in running pods - just like you would with SSH normally.
+- Access the logs for running and exited containers in a pod.
+
 ![demo](./assets/demo.gif)
 
 ## Getting Started
