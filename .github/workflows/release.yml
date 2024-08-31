@@ -38,6 +38,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: tags
+        run: git fetch --prune --unshallow --tags
 
       - name: fetch digests
         uses: actions/download-artifact@v4
@@ -51,6 +53,13 @@ jobs:
       - name: buildx
         uses: docker/setup-buildx-action@v3
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff
+      - name: get version
+        id: version
+        run: echo "version=$(just --evaluate version)" >> "${GITHUB_OUTPUT}"
+
       - name: meta
         id: meta
         uses: docker/metadata-action@v5
@@ -59,6 +68,8 @@ jobs:
             ${{ env.IMAGE }}
           tags: |
             type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=raw,value=${{ steps.version.outputs.version }},enable=true
             type=raw,value=unstable,enable={{is_default_branch}}
             type=sha
 
