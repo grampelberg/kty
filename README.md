@@ -17,14 +17,14 @@ You can:
 
 1. Download the [cli][cli-download] and add it to your `$PATH`.
 1. Get a k8s cluster. [k3d][k3d] is a convenient way to get a cluster up and
-   running fast. Follow their [installation] instructions and create a default
+   running fast. Follow their installation instructions and create a default
    cluster.
 1. Grant your email address access to the cluster. Choose `cluster-admin` if
    you'd like something simple to check out how things work. For more details on
-   the minimum possible permissions, read the [Authorization] section. The email
-   address is what you'll be using to authenticate against. It can either be the
-   one associated with a google or github account. Note, the ID used for login
-   and the providers available can all be configured.
+   the minimum possible permissions, read the [Authorization](#authorization)
+   section. The email address is what you'll be using to authenticate against.
+   It can either be the one associated with a google or github account. Note,
+   the ID used for login and the providers available can all be configured.
 
    ```bash
    kuberift users grant <cluster-role> <email-address>
@@ -84,9 +84,9 @@ your cluster, you can run:
 
 ```bash
 helm install kuberift oci://ghcr.io/grampelberg/helm/kuberift \
--n kuberift --create-namespace \
---version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
--f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
+  -n kuberift --create-namespace \
+  --version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
+  -f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
 ```
 
 Note: this exposes the kuberift service externally by default. To get that IP
@@ -264,22 +264,3 @@ the design decisions section for an explanation of what's happening there.
 
 - See releases for the latest tagged release.
 - The `unstable` tag is updated on every merge to main.
-
-## TODO
-
-- Groups are probably what most users are going to want to use to configure all
-  this. The closest to the OpenID spec would be via adding extra scopes that add
-  the data required to the token and then map back to a group. Imagine:
-
-  ```yaml
-  user: email
-  group: https://myapp.example.com/group
-  ```
-
-  The downside to using this kind of configuration is that it'll need to be
-  handled in the provider backend and it is unclear how easy that'll be. It is
-  possible in auth0, so I'll go down this route for now.
-
-- Is there a way to do FPS on a per-session basis with prometheus? Naively the
-  way to do it would be to have a per-session label value, but that would be
-  crazy for cardinality.
