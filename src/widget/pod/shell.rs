@@ -116,7 +116,7 @@ impl Command {
 
     fn input(container: &Container) -> Text {
         Text::default()
-            .with_title(container.name_any())
+            .with_title(container.name_any().as_str())
             .with_content(COMMAND)
     }
 

@@ -1,3 +1,6 @@
+mod sftp;
+mod state;
+
 use std::{
     borrow::{BorrowMut, Cow},
     str,
@@ -14,18 +17,18 @@ use prometheus::{
 };
 use prometheus_static_metric::make_static_metric;
 use ratatui::{backend::WindowSize, layout::Size};
-use replace_with::replace_with_or_abort;
 use russh::{
     keys::key::PublicKey,
     server::{self, Auth, Response},
-    ChannelId, MethodSet,
+    ChannelId, Disconnect, MethodSet,
 };
+use state::State;
 use tracing::debug;
 
 use crate::{
     dashboard::Dashboard,
     events::Event,
-    identity::{key::Key, Identity},
+    identity::Key,
     io::Channel,
     openid,
     ssh::{Authenticate, Controller},
@@ -53,6 +56,12 @@ make_static_metric! {
         "result" => {
             valid,
             invalid,
+        }
+    }
+    pub struct RequestVec: IntCounter {
+        "method" => {
+            pty,
+            sftp,
         }
     }
 }
@@ -121,88 +130,10 @@ lazy_static! {
     static ref CODE_CHECKED: CodeVec = CodeVec::from(&CODE_CHECKED_VEC);
     static ref WINDOW_RESIZE: IntCounter =
         register_int_counter!("window_resize_total", "Number of window resize requests").unwrap();
-}
-
-#[derive(Debug, strum_macros::AsRefStr)]
-pub enum State {
-    Unauthenticated,
-    KeyOffered(PublicKey),
-    CodeSent(openid::DeviceCode, Option<PublicKey>),
-    InvalidIdentity(Identity, Option<PublicKey>),
-    Authenticated(DebugClient, String),
-    ChannelOpen(DebugClient),
-    PtyStarted(Dashboard),
-}
-
-pub struct DebugClient(kube::Client);
-
-impl std::fmt::Debug for DebugClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "kube::Client")
-    }
-}
-
-impl AsRef<kube::Client> for DebugClient {
-    fn as_ref(&self) -> &kube::Client {
-        &self.0
-    }
-}
-
-impl State {
-    fn key_offered(&mut self, key: &PublicKey) {
-        *self = State::KeyOffered(key.clone());
-    }
-
-    fn code_sent(&mut self, code: &openid::DeviceCode) {
-        let key = match self {
-            State::KeyOffered(key) => Some(key.clone()),
-            State::InvalidIdentity(_, key) => key.clone(),
-            _ => None,
-        };
-
-        *self = State::CodeSent(code.clone(), key);
-    }
-
-    fn code_used(&mut self) {
-        let State::CodeSent(_, key) = self else {
-            *self = State::Unauthenticated;
-
-            return;
-        };
-
-        match key {
-            Some(key) => {
-                *self = State::KeyOffered(key.clone());
-            }
-            None => {
-                *self = State::Unauthenticated;
-            }
-        }
-    }
-
-    fn invalid_identity(&mut self, identity: Identity) {
-        let key = match self {
-            State::KeyOffered(key) => Some(key.clone()),
-            _ => None,
-        };
-
-        *self = State::InvalidIdentity(identity, key);
-    }
-
-    fn authenticated(&mut self, client: kube::Client, method: String) {
-        *self = State::Authenticated(DebugClient(client), method);
-    }
-
-    fn channel_opened(&mut self) {
-        replace_with_or_abort(self, |self_| match self_ {
-            State::Authenticated(client, _) => State::ChannelOpen(client),
-            _ => self_,
-        });
-    }
-
-    fn pty_started(&mut self, dashboard: Dashboard) {
-        *self = State::PtyStarted(dashboard);
-    }
+    static ref REQUESTS_VEC: IntCounterVec =
+        register_int_counter_vec!(opts!("requests_total", "Number of requests",), &["method"])
+            .unwrap();
+    static ref REQUESTS: RequestVec = RequestVec::from(&REQUESTS_VEC);
 }
 
 fn token_response(error: Report) -> Result<Auth> {
@@ -407,13 +338,13 @@ impl server::Handler for Session {
 
     async fn channel_open_session(
         &mut self,
-        _: russh::Channel<server::Msg>,
+        channel: russh::Channel<server::Msg>,
         _: &mut server::Session,
     ) -> Result<bool> {
         TOTAL_SESSIONS.inc();
         ACTIVE_SESSIONS.inc();
 
-        self.state.channel_opened();
+        self.state.channel_opened(channel);
 
         Ok(true)
     }
@@ -422,14 +353,22 @@ impl server::Handler for Session {
     async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
         TOTAL_BYTES.inc_by(data.len() as u64);
 
-        let State::PtyStarted(dashboard) = &self.state else {
-            UNEXPECTED_STATE
-                .with_label_values(&["PtyStarted", self.state.as_ref()])
-                .inc();
-            return Err(eyre!("Dashboard not started"));
-        };
+        match self.state.borrow_mut() {
+            State::PtyStarted(ref mut dashboard) => {
+                dashboard.send(data.into())?;
+            }
+            // SFTP data is handled by the channel passed into russh_sftp::server::run
+            State::SftpStarted => {}
+            state => {
+                UNEXPECTED_STATE
+                    .with_label_values(&["PtyStarted", state.as_ref()])
+                    .inc();
 
-        dashboard.send(data.into())
+                return Err(eyre!("data received when in unexpected state: {:?}", state));
+            }
+        }
+
+        Ok(())
     }
 
     async fn window_change_request(
@@ -470,6 +409,12 @@ impl server::Handler for Session {
         Ok(())
     }
 
+    async fn channel_eof(&mut self, id: ChannelId, session: &mut server::Session) -> Result<()> {
+        session.close(id);
+
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, session))]
     async fn pty_request(
         &mut self,
@@ -482,12 +427,14 @@ impl server::Handler for Session {
         modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
     ) -> Result<()> {
-        let State::ChannelOpen(user_client) = self.state.borrow_mut() else {
+        let State::ChannelOpen(_, user_client) = self.state.borrow_mut() else {
             UNEXPECTED_STATE
                 .with_label_values(&["ChannelOpen", self.state.as_ref()])
                 .inc();
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
+
+        REQUESTS.pty.inc();
 
         let mut dashboard = Dashboard::new(user_client.as_ref().clone());
 
@@ -506,6 +453,47 @@ impl server::Handler for Session {
         }))?;
 
         self.state.pty_started(dashboard);
+
+        session.channel_success(id);
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, session), fields(activity = "sftp"))]
+    async fn subsystem_request(
+        &mut self,
+        id: ChannelId,
+        name: &str,
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        let State::ChannelOpen(_, _) = self.state.borrow_mut() else {
+            UNEXPECTED_STATE
+                .with_label_values(&["ChannelOpen", self.state.as_ref()])
+                .inc();
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        REQUESTS.sftp.inc();
+
+        if name != "sftp" {
+            session.channel_failure(id);
+
+            session.disconnect(
+                Disconnect::ByApplication,
+                format!("unsupported subsystem: {name}").as_str(),
+                "",
+            );
+
+            return Ok(());
+        }
+
+        let (channel, client) = self.state.take_channel_open()?;
+
+        let handler = sftp::Handler::new(client.as_ref().clone());
+        russh_sftp::server::run(channel.into_stream(), handler).await;
+
+        self.state.sftp_started();
+        session.channel_success(id);
 
         Ok(())
     }

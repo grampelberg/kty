@@ -10,6 +10,7 @@ You can:
 
 - Get a shell in running pods - just like you would with SSH normally.
 - Access the logs for running and exited containers in a pod.
+- `scp` files from pods. sftp clients work as well.
 
 ![demo](./assets/demo.gif)
 
@@ -45,13 +46,51 @@ You can:
 From this point, here's a few suggestions for things to check out:
 
 - Start a new pod. It'll show up in the dashboard immediately!
+
 - Exec into a pod. Select the pod you want and go to the `Shell` tab. You'll be
   able to pick the command to exec and then be shell'd into the pod directly.
+
 - Follow the logs. Logs for all containers in a pod are streamed to the `Logs`
   tab when you've selected a pod from the main list.
 
+- `scp` some files out of a container:
+
+  ```bash
+  scp -P 2222 me@localhost:/default/my-pod/etc/hosts /tmp
+  ```
+
 [cli-download]: https://github.com/grampelberg/kuberift/releases
 [k3d]: https://k3d.io
+
+## Interaction
+
+### SSH
+
+To get to the dashboard, you can run:
+
+```bash
+ssh anything@my-remote-host-or-ip -p 2222
+```
+
+As you're authenticated either via OpenID or public key, the username is not
+used.
+
+### SFTP
+
+The cluster is represented by a file tree:
+
+```bash
+/<namespace>/<pod-name>/<container-name>/<file-path>
+```
+
+For the `nginx` pod running in `default`, you would do something like:
+
+```bash
+scp -P 2222 me@localhost:/default/nginx/nginx/etc/hosts /tmp
+```
+
+It can be a little easier to navigate all this with an sftp client as that'll
+render the file tree natively for you.
 
 ## Deployment
 
@@ -241,6 +280,13 @@ the design decisions section for an explanation of what's happening there.
 - table_filter_total - Number of times a table was filtered.
 - widget_views_total - Number of times a widget was created by resource
   (container, pod) and type (cmd, log, yaml, ...).
+- requests_total - Number of requests that have come in by type (pty, sftp).
+- sftp_active_sessions - Total number of active sessions currently.
+- sftp_bytes_total - Total number of bytes transferred via sftp by direction
+  (read, write).
+- sftp_files_total - Total number of files by direction (sent, received).
+- sftp_stat_total - Total number of times `stat` was called on a path.
+- sftp_list_total - Total number of times `list` was called on a path.
 
 ## Design Decisions
 
