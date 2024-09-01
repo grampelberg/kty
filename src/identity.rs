@@ -7,6 +7,7 @@ use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SelfSubjectAccessReview, SelfSubjectAccessReviewSpec,
     SubjectAccessReviewStatus,
 };
+pub use key::Key;
 use kube::api::{Api, PostParams};
 
 use crate::ssh::{Authenticate, Controller};
