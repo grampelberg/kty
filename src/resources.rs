@@ -1,10 +1,12 @@
 pub mod age;
 pub mod container;
+pub mod file;
 pub mod pod;
 pub mod store;
 
 use color_eyre::Section;
 use eyre::{eyre, Result};
+pub use file::File;
 use futures::StreamExt;
 use itertools::Itertools;
 use json_value_merge::Merge;

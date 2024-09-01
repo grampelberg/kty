@@ -1,8 +1,13 @@
+pub mod file;
+
 use chrono::Utc;
+#[allow(clippy::module_name_repetitions)]
+pub use file::ContainerFiles;
 use k8s_openapi::api::core::v1::{
     self, ContainerState, ContainerStateRunning, ContainerStateTerminated, ContainerStateWaiting,
-    ContainerStatus,
+    ContainerStatus, Pod,
 };
+use kube::ResourceExt;
 use ratatui::{
     layout::Constraint,
     widgets::{Cell, Row},
@@ -13,7 +18,9 @@ use crate::widget::{table::RowStyle, TableRow};
 
 #[allow(clippy::module_name_repetitions)]
 pub trait ContainerExt {
-    fn name_any(&self) -> &str;
+    fn name_any(&self) -> String;
+    fn namespace(&self) -> Option<String>;
+    fn pod_name(&self) -> String;
     fn image(&self) -> &str;
     fn state(&self) -> State;
     fn restarts(&self) -> String;
@@ -81,13 +88,18 @@ impl From<Option<&ContainerState>> for State {
 
 #[derive(Debug, Clone)]
 pub struct Container {
+    pod: Pod,
     spec: v1::Container,
     status: Option<ContainerStatus>,
 }
 
 impl Container {
-    pub fn new(spec: v1::Container) -> Self {
-        Self { spec, status: None }
+    pub fn new(pod: Pod, spec: v1::Container) -> Self {
+        Self {
+            pod,
+            spec,
+            status: None,
+        }
     }
 
     pub fn with_status(&mut self, status: ContainerStatus) -> &mut Self {
@@ -98,8 +110,16 @@ impl Container {
 }
 
 impl ContainerExt for Container {
-    fn name_any(&self) -> &str {
-        self.spec.name.as_str()
+    fn name_any(&self) -> String {
+        self.spec.name.clone()
+    }
+
+    fn namespace(&self) -> Option<String> {
+        self.pod.namespace()
+    }
+
+    fn pod_name(&self) -> String {
+        self.pod.name_any()
     }
 
     fn image(&self) -> &str {
@@ -217,6 +237,6 @@ impl<'a> TableRow<'a> for Container {
 
 impl Compare for Container {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.name_any().cmp(other.name_any())
+        self.name_any().cmp(&other.name_any())
     }
 }

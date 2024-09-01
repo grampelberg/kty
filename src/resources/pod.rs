@@ -1,3 +1,5 @@
+pub mod proc;
+
 use std::{borrow::Borrow, cmp::Ordering, error::Error, fmt::Display, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
@@ -9,6 +11,7 @@ use k8s_openapi::{
     apimachinery::pkg::apis::meta::v1,
 };
 use kube::ResourceExt;
+pub use proc::Proc;
 use ratatui::{
     layout::Constraint,
     widgets::{Cell, Row},
@@ -221,7 +224,7 @@ impl PodExt for Pod {
             .map(|spec| {
                 spec.containers
                     .iter()
-                    .map(|c| Container::new(c.clone()))
+                    .map(|c| Container::new(self.clone(), c.clone()))
                     .collect()
             })
             .unwrap_or_default();
