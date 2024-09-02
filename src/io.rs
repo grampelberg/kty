@@ -51,11 +51,11 @@ impl Channel {
 
 #[async_trait::async_trait]
 impl Writer for Channel {
-    fn blocking_writer(&self) -> impl Write {
+    fn blocking(&self) -> impl Write {
         SshWriter::new(self.id, self.handle.clone())
     }
 
-    fn async_writer(&self) -> impl AsyncWrite + Send + Unpin + 'static {
+    fn non_blocking(&self) -> impl AsyncWrite + Send + Unpin + 'static {
         SshWriter::new(self.id, self.handle.clone())
     }
 
@@ -170,8 +170,8 @@ impl AsyncWrite for SshWriter {
 
 #[async_trait::async_trait]
 pub trait Writer: Send + Sync + 'static {
-    fn async_writer(&self) -> impl AsyncWrite + Send + Unpin + 'static;
-    fn blocking_writer(&self) -> impl Write + Send;
+    fn blocking(&self) -> impl Write + Send;
+    fn non_blocking(&self) -> impl AsyncWrite + Send + Unpin + 'static;
 
     async fn shutdown(&self, _msg: String) -> Result<()> {
         Ok(())

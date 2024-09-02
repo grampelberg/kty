@@ -190,7 +190,7 @@ fn log_stream<'a>(
         {
             Ok(stream) => stream.lines(),
             Err(err) => {
-                let kube::Error::Api(resp) = err else {
+                let kube::Error::Api(resp) = &err else {
                     return Err(Report::new(err));
                 };
 
@@ -202,15 +202,15 @@ fn log_stream<'a>(
                     return log_stream(client, pod, tx, new_params).await;
                 }
 
-                tracing::info!("resp: {:#?}", resp);
-
-                return Err(eyre!("fart"));
+                return Err(eyre!(err));
             }
         };
 
         while let Some(line) = stream.try_next().await? {
             tx.send(line)?;
         }
+
+        tracing::info!("stream ended");
 
         Ok(())
     }

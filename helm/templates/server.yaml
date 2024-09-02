@@ -30,7 +30,7 @@ kind: Secret
 metadata:
   name: kuberift-server
   labels:
-    {{- include "labels" (dict "name" "kuberift-server" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
 data:
   {{- $old_sec := lookup "v1" "Secret" $.Release.Namespace "kuberift-server" }}
 
@@ -47,7 +47,7 @@ metadata:
 spec:
   {{- if .loadbalancer }}
   type: LoadBalancer
-  {{- else -}}
+  {{- else }}
   type: ClusterIP
   {{- end }}
 

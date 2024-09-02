@@ -1,26 +1,24 @@
 use std::str;
 
-use eyre::{eyre, Result};
-use replace_with::{replace_with_or_abort, replace_with_or_abort_and_return};
-use russh::{keys::key::PublicKey, server};
+use russh::keys::key::PublicKey;
 
-use crate::{dashboard::Dashboard, identity::Identity, openid};
+use crate::{identity::Identity, openid};
 
 #[derive(Debug, strum_macros::AsRefStr)]
 pub enum State {
-    // Used when all the fields of a variant have been removed and the next state is pending.
-    Unknown,
     Unauthenticated,
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     InvalidIdentity(Identity, Option<PublicKey>),
+    // TODO: once an authenticated state is reached, the user can really go do whatever they want.
+    // For example, a dashboard and port-forwarding can happen. Instead of trying to show that as
+    // states that get moved between, it feels like this should stop at authenticated and then let
+    // each individual request track its own state. This'll require some extra work on the channel
+    // side of things.
     Authenticated(DebugClient, String),
-    ChannelOpen(russh::Channel<server::Msg>, DebugClient),
-    PtyStarted(Dashboard),
-    SftpStarted,
 }
 
-pub struct DebugClient(kube::Client);
+pub struct DebugClient(pub kube::Client);
 
 impl std::fmt::Debug for DebugClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -77,27 +75,5 @@ impl State {
 
     pub fn authenticated(&mut self, client: kube::Client, method: String) {
         *self = State::Authenticated(DebugClient(client), method);
-    }
-
-    pub fn channel_opened(&mut self, channel: russh::Channel<server::Msg>) {
-        replace_with_or_abort(self, |self_| match self_ {
-            State::Authenticated(client, _) => State::ChannelOpen(channel, client),
-            _ => self_,
-        });
-    }
-
-    pub fn take_channel_open(&mut self) -> Result<(russh::Channel<server::Msg>, DebugClient)> {
-        replace_with_or_abort_and_return(self, |self_| match self_ {
-            State::ChannelOpen(channel, client) => (Ok((channel, client)), State::Unknown),
-            _ => (Err(eyre!("channel not open")), self_),
-        })
-    }
-
-    pub fn pty_started(&mut self, dashboard: Dashboard) {
-        *self = State::PtyStarted(dashboard);
-    }
-
-    pub fn sftp_started(&mut self) {
-        *self = State::SftpStarted;
     }
 }
