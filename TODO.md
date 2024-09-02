@@ -24,6 +24,11 @@
   way to do it would be to have a per-session label value, but that would be
   crazy for cardinality.
 
+- There's a bug somewhere in `log_stream`. My k3d cluster restarted and while I
+  could get all the logs, the stream wouldn't keep running - it'd terminate
+  immediately. `stern` seemed to be working fine. Recreating the cluster caused
+  everything to work again.
+
 ## SFTP
 
 - Document that the permissions here are different than for the dashboard. You
@@ -43,3 +48,7 @@
 - Allow `ssh` directly into a pod without starting the dashboard.
 - Enable `ssh -L` for forwarding requests _into_ a pod.
 - Enable `ssh -R` for forwarding a remote service _into_ a localhost.
+
+## TCP/IP Forwarding
+
+- Implement `-R` for proxying from the cluster to localhost.

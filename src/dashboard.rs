@@ -1,13 +1,15 @@
 use std::time::Duration;
 
-use eyre::{eyre, Result};
+use eyre::{eyre, Report, Result};
+use futures::TryStreamExt;
 use ratatui::{backend::Backend as BackendTrait, widgets::Clear, Terminal};
 use replace_with::replace_with_or_abort;
 use tokio::{
-    io::AsyncWrite,
+    io::{AsyncRead, AsyncWrite},
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
+use tokio_util::io::ReaderStream;
 
 use crate::{
     events::{Broadcast, Event, Input, Keypress},
@@ -42,7 +44,10 @@ impl Dashboard {
         self
     }
 
-    pub fn start(&mut self, channel: impl Writer) -> Result<()> {
+    pub fn start<R>(&mut self, stdin: R, stdout: impl Writer) -> Result<UnboundedSender<Event>>
+    where
+        R: AsyncRead + Send + 'static,
+    {
         if self.task.is_some() {
             return Err(eyre!("dashboard already started"));
         }
@@ -50,14 +55,33 @@ impl Dashboard {
         let (tx, rx) = mpsc::unbounded_channel();
         self.tx = Some(tx.clone());
 
+        let reader_tx = tx.clone();
+        tokio::spawn(async move {
+            let stream = ReaderStream::new(stdin);
+            tokio::pin!(stream);
+
+            loop {
+                tokio::select! {
+                    () = reader_tx.closed() => {
+                        break;
+                    }
+                    Ok(Some(msg)) = stream.try_next() => {
+                        reader_tx.send(msg.into())?;
+                    }
+                }
+            }
+
+            Ok::<(), Report>(())
+        });
+
         self.task = Some(tokio::spawn(run(
             self.client.clone(),
             self.tick,
             rx,
-            channel,
+            stdout,
         )));
 
-        Ok(())
+        Ok(tx)
     }
 
     pub fn send(&self, ev: Event) -> Result<()> {
@@ -117,7 +141,8 @@ async fn run(
     client: kube::Client,
     tick: Duration,
     mut rx: UnboundedReceiver<Event>,
-    channel: impl Writer,
+
+    stdout: impl Writer,
 ) -> Result<()> {
     let mut interval = tokio::time::interval(tick);
     // Because we pause the render loop while rendering a raw widget, the ticks can
@@ -125,7 +150,7 @@ async fn run(
     // extra CPU), it causes `Handle.data()` to deadlock if called too quickly.
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let (backend, window_size) = Backend::with_size(channel.blocking_writer());
+    let (backend, window_size) = Backend::with_size(stdout.blocking());
     let mut term = Terminal::new(backend)?;
 
     // kube::Client ends up being cloned by ~every widget, it'd be nice to Arc<> it
@@ -158,7 +183,7 @@ async fn run(
             Mode::UI(ref mut widget) => draw_ui(widget, &mut term, &ev)?,
             Mode::Raw(ref mut raw_widget, ref mut current_widget) => {
                 let raw_result =
-                    draw_raw(raw_widget, &mut term, &mut rx, channel.async_writer()).await;
+                    draw_raw(raw_widget, &mut term, &mut rx, stdout.non_blocking()).await;
 
                 let result = current_widget.dispatch(&Event::Finished(raw_result))?;
 
@@ -184,7 +209,7 @@ async fn run(
         frame.set_cursor(0, 0);
     })?;
 
-    channel.shutdown("exiting...".to_string()).await?;
+    stdout.shutdown("exiting...".to_string()).await?;
 
     Ok(())
 }
@@ -205,7 +230,8 @@ where
 
             widget.dispatch(ev)
         }
-        _ => Ok(Broadcast::Ignored),
+        Event::Render => Ok(Broadcast::Ignored),
+        _ => widget.dispatch(ev),
     };
 
     term.draw(|frame| {

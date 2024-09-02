@@ -1,4 +1,4 @@
-use std::{io::Read, iter::Iterator, os::fd::AsRawFd};
+use std::{io::Read, iter::Iterator, os::fd::AsRawFd, pin::Pin, task::Context};
 
 use cata::{Command, Container};
 use clap::Parser;
@@ -6,12 +6,14 @@ use eyre::Result;
 use mio::{unix::SourceFd, Events, Interest, Poll};
 use ratatui::{backend::WindowSize, layout::Size};
 use tokio::{
+    io::{AsyncRead, ReadBuf},
     sync::mpsc::{unbounded_channel, UnboundedSender},
     time::Duration,
 };
-use tokio_util::bytes::Bytes;
 
 use crate::{dashboard::Dashboard as UIDashboard, events::Event, io::Writer};
+
+static STDIN_TOKEN: mio::Token = mio::Token(0);
 
 #[derive(Parser, Container)]
 pub struct Dashboard {
@@ -22,34 +24,70 @@ pub struct Dashboard {
     route: Vec<String>,
 }
 
-fn poll_stdin(tx: &UnboundedSender<Bytes>) -> Result<()> {
-    let mut poll = Poll::new()?;
-    let mut events = Events::with_capacity(1024);
+struct Stdin {
+    poll: Poll,
+}
 
-    let fd = std::io::stdin().as_raw_fd();
-    let mut fd = SourceFd(&fd);
+// `tokio::io::stdin` runs in an actual background thread. This results in the
+// program not exiting naturally, instead requiring the user to hit enter.
+// Instead, use mio directly to not not require a thread at all.
+//
+// Note: the alternative way to do this is by having `Drop` get called on the
+// reader. That doesn't happen currently because we spin up an async task to
+// read and convert to events before sending to the raw dashboard. This allows
+// for the actual `run()` function to block when it switches to raw mode.
+impl Stdin {
+    fn new() -> Result<Self> {
+        let poll = Poll::new()?;
 
-    poll.registry()
-        .register(&mut fd, mio::Token(0), Interest::READABLE)?;
+        let fd = std::io::stdin().as_raw_fd();
+        let mut fd = SourceFd(&fd);
 
-    loop {
-        if tx.is_closed() {
-            break;
-        }
+        poll.registry()
+            .register(&mut fd, STDIN_TOKEN, Interest::READABLE)?;
 
-        poll.poll(&mut events, Some(Duration::from_millis(100)))?;
+        Ok(Self { poll })
+    }
+}
+
+impl AsyncRead for Stdin {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        let mut events = Events::with_capacity(1024);
+
+        self.get_mut()
+            .poll
+            .poll(&mut events, Some(Duration::from_millis(1)))?;
 
         for event in &events {
-            if event.token() == mio::Token(0) {
-                let mut buf = [0; 1024];
-                let n = std::io::stdin().read(&mut buf)?;
-
-                tx.send(Bytes::copy_from_slice(&buf[..n]))?;
+            if event.token() != STDIN_TOKEN {
+                continue;
             }
-        }
-    }
 
-    Ok(())
+            let n = std::io::stdin().read(buf.initialize_unfilled())?;
+            buf.advance(n);
+
+            tracing::info!("buf: {:?}", buf.filled());
+        }
+
+        if !buf.filled().is_empty() {
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        let waker = cx.waker().clone();
+
+        // Check for input every 100ms.
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            waker.wake();
+        });
+
+        std::task::Poll::Pending
+    }
 }
 
 #[async_trait::async_trait]
@@ -58,17 +96,11 @@ impl Command for Dashboard {
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
 
-        let (tx, mut rx) = unbounded_channel::<Bytes>();
         let (stop_tx, mut stop_rx) = unbounded_channel::<()>();
-
-        // While blocking tasks cannot be aborted, this *should* exit when this function
-        // drops rx. Spawning the mio polling via spawn results in rx.recv() being
-        // blocked without a yield happening.
-        tokio::task::spawn_blocking(move || poll_stdin(&tx).unwrap());
 
         let mut dashboard = UIDashboard::new(kube::Client::try_default().await?);
 
-        dashboard.start(LocalWriter { stop: stop_tx })?;
+        dashboard.start(Stdin::new()?, LocalWriter { stop: stop_tx })?;
 
         // TODO: listen to resize events and publish them to the dashboard.
         let (cx, cy) = crossterm::terminal::size()?;
@@ -83,20 +115,7 @@ impl Command for Dashboard {
             },
         }))?;
 
-        loop {
-            tokio::select! {
-                _ = stop_rx.recv() => {
-                    break;
-                }
-                msg = rx.recv() => {
-                    let Some(msg) = msg else {
-                        break;
-                    };
-
-                    dashboard.send(msg.into())?;
-                }
-            }
-        }
+        stop_rx.recv().await;
 
         dashboard.stop().await?;
 
@@ -117,12 +136,12 @@ pub struct LocalWriter {
 
 #[async_trait::async_trait]
 impl Writer for LocalWriter {
-    fn async_writer(&self) -> impl tokio::io::AsyncWrite + Send + Unpin + 'static {
-        tokio::io::stdout()
+    fn blocking(&self) -> impl std::io::Write + Send {
+        std::io::stdout()
     }
 
-    fn blocking_writer(&self) -> impl std::io::Write + Send {
-        std::io::stdout()
+    fn non_blocking(&self) -> impl tokio::io::AsyncWrite + Send + Unpin + 'static {
+        tokio::io::stdout()
     }
 
     async fn shutdown(&self, _msg: String) -> Result<()> {
