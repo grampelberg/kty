@@ -1,3 +1,4 @@
+use ansi_to_tui::IntoText;
 use eyre::{Report, Result};
 use ratatui::{
     layout::Rect,
@@ -10,17 +11,27 @@ use ratatui::{
 use super::Widget;
 use crate::events::{Broadcast, Event, Keypress};
 
+#[derive(Default)]
 pub struct Error {
-    inner: Report,
+    msg: String,
 
     position: (u16, u16),
 }
 
-impl Error {
-    pub fn new(inner: Report) -> Self {
+impl From<Report> for Error {
+    fn from(err: Report) -> Self {
         Self {
-            inner,
-            position: (0, 0),
+            msg: format!("Error:{err:?}"),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<String> for Error {
+    fn from(msg: String) -> Self {
+        Self {
+            msg,
+            ..Default::default()
         }
     }
 }
@@ -52,7 +63,7 @@ impl Widget for Error {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Red));
 
-        let pg = Paragraph::new(format!("Error:{:?}", self.inner))
+        let pg = Paragraph::new(self.msg.as_bytes().into_text()?)
             .block(block)
             .scroll(self.position);
 

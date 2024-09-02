@@ -3,6 +3,7 @@ mod state;
 
 use std::{
     borrow::{BorrowMut, Cow},
+    collections::HashMap,
     str,
     sync::Arc,
 };
@@ -23,6 +24,10 @@ use russh::{
     ChannelId, Disconnect, MethodSet,
 };
 use state::State;
+use tokio::{
+    sync::{mpsc::UnboundedSender, Mutex},
+    task::JoinSet,
+};
 use tracing::debug;
 
 use crate::{
@@ -31,6 +36,7 @@ use crate::{
     identity::Key,
     io::Channel,
     openid,
+    resources::stream::direct,
     ssh::{Authenticate, Controller},
 };
 
@@ -62,6 +68,16 @@ make_static_metric! {
         "method" => {
             pty,
             sftp,
+            window_resize,
+        }
+    }
+    pub struct ChannelVec: IntCounter {
+        "method" => {
+            open_session,
+            close,
+            eof,
+            direct_tcpip,
+            forwarded_tcpip,
         }
     }
 }
@@ -87,6 +103,9 @@ lazy_static! {
         &["expected", "actual"],
     )
     .unwrap();
+}
+
+lazy_static! {
     static ref AUTH_ATTEMPTS_VEC: IntCounterVec = register_int_counter_vec!(
         opts!(
             "auth_attempts_total",
@@ -128,12 +147,22 @@ lazy_static! {
     )
     .unwrap();
     static ref CODE_CHECKED: CodeVec = CodeVec::from(&CODE_CHECKED_VEC);
-    static ref WINDOW_RESIZE: IntCounter =
-        register_int_counter!("window_resize_total", "Number of window resize requests").unwrap();
+}
+
+lazy_static! {
     static ref REQUESTS_VEC: IntCounterVec =
         register_int_counter_vec!(opts!("requests_total", "Number of requests",), &["method"])
             .unwrap();
     static ref REQUESTS: RequestVec = RequestVec::from(&REQUESTS_VEC);
+}
+
+lazy_static! {
+    static ref CHANNELS_VEC: IntCounterVec = register_int_counter_vec!(
+        opts!("channels_total", "Number of channel actions",),
+        &["method"]
+    )
+    .unwrap();
+    static ref CHANNELS: ChannelVec = ChannelVec::from(&CHANNELS_VEC);
 }
 
 fn token_response(error: Report) -> Result<Auth> {
@@ -165,19 +194,33 @@ fn token_response(error: Report) -> Result<Auth> {
 }
 
 pub struct Session {
-    start: DateTime<Utc>,
     controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
+
+    start: DateTime<Utc>,
     state: State,
+    tasks: JoinSet<Result<()>>,
+
+    // Channels are created in the `channel_open_session` method and removed when a request comes
+    // in for that channel, such as a `pty_request`.
+    channels: HashMap<ChannelId, russh::Channel<server::Msg>>,
+
+    // Subsystem requests add a writer when they are created and can handle input. This allows for
+    // cross-request communication - such as error reporting in the dashboard from forwarded
+    // connections.
+    writers: Arc<Mutex<HashMap<ChannelId, UnboundedSender<Event>>>>,
 }
 
 impl Session {
     pub fn new(controller: Arc<Controller>, identity_provider: Arc<openid::Provider>) -> Self {
         Self {
-            start: Utc::now(),
             controller,
             identity_provider,
+            start: Utc::now(),
+            tasks: JoinSet::new(),
             state: State::Unauthenticated,
+            channels: HashMap::new(),
+            writers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -307,7 +350,7 @@ impl server::Handler for Session {
                 self.send_code().await
             }
             State::CodeSent(..) => self.authenticate_code().await,
-            _ => {
+            State::Authenticated(..) => {
                 UNEXPECTED_STATE
                     .with_label_values(&[
                         "Unauthenticated | KeyOffered | CodeSent",
@@ -343,105 +386,130 @@ impl server::Handler for Session {
     ) -> Result<bool> {
         TOTAL_SESSIONS.inc();
         ACTIVE_SESSIONS.inc();
+        CHANNELS.open_session.inc();
 
-        self.state.channel_opened(channel);
+        self.channels.insert(channel.id(), channel);
 
         Ok(true)
     }
 
+    async fn channel_close(&mut self, id: ChannelId, _: &mut server::Session) -> Result<()> {
+        ACTIVE_SESSIONS.dec();
+        CHANNELS.close.inc();
+
+        if let Some(writer) = self.writers.lock().await.remove(&id) {
+            writer.send(Event::Shutdown)?;
+        }
+
+        Ok(())
+    }
+
+    async fn channel_eof(&mut self, id: ChannelId, session: &mut server::Session) -> Result<()> {
+        CHANNELS.eof.inc();
+        session.close(id);
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, channel, session))]
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: russh::Channel<server::Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        session: &mut server::Session,
+    ) -> Result<bool, Self::Error> {
+        CHANNELS.direct_tcpip.inc();
+        tracing::debug!("direct");
+
+        let id = channel.id();
+        let handle = session.handle();
+
+        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
+            UNEXPECTED_STATE
+                .with_label_values(&["Authenticated", self.state.as_ref()])
+                .inc();
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        let connection_string = host_to_connect.to_string();
+        let writers = self.writers.clone();
+        let client = user_client.as_ref().clone();
+        let host = host_to_connect.to_string();
+
+        self.tasks.spawn(async move {
+            #[allow(clippy::cast_possible_truncation)]
+            let result = match direct(channel, client, host.clone(), port_to_connect as u16).await {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    let e = e
+                        .wrap_err(format!("failed to open connection to {connection_string}"))
+                        .wrap_err("unable to forward connection");
+
+                    let writers = writers.lock().await;
+
+                    for (_, writer) in writers.iter() {
+                        writer.send(Event::Error(format!("Error:{e:?}")))?;
+                    }
+
+                    handle
+                        .close(id)
+                        .await
+                        .map_err(|()| eyre!("failed closing channel"))?;
+
+                    Err(e)
+                }
+            };
+
+            result
+        });
+
+        Ok(true)
+    }
+
+    // #[tracing::instrument(skip(self, channel, session))]
+    // async fn channel_open_forwarded_tcpip(
+    //     &mut self,
+    //     channel: russh::Channel<server::Msg>,
+    //     host_to_connect: &str,
+    //     port_to_connect: u32,
+    //     originator_address: &str,
+    //     originator_port: u32,
+    //     session: &mut server::Session,
+    // ) -> Result<bool, Self::Error> {
+    //     tracing::info!("forward");
+
+    //     Ok(false)
+    // }
+
     #[tracing::instrument(skip(self, data))]
     async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
         TOTAL_BYTES.inc_by(data.len() as u64);
-
-        match self.state.borrow_mut() {
-            State::PtyStarted(ref mut dashboard) => {
-                dashboard.send(data.into())?;
-            }
-            // SFTP data is handled by the channel passed into russh_sftp::server::run
-            State::SftpStarted => {}
-            state => {
-                UNEXPECTED_STATE
-                    .with_label_values(&["PtyStarted", state.as_ref()])
-                    .inc();
-
-                return Err(eyre!("data received when in unexpected state: {:?}", state));
-            }
-        }
 
         Ok(())
     }
 
     async fn window_change_request(
         &mut self,
-        _: ChannelId,
-        cx: u32,
-        cy: u32,
-        px: u32,
-        py: u32,
-        _: &mut server::Session,
-    ) -> Result<(), Self::Error> {
-        WINDOW_RESIZE.inc();
-
-        if let State::PtyStarted(dashboard) = &self.state {
-            #[allow(clippy::cast_possible_truncation)]
-            dashboard.send(Event::Resize(WindowSize {
-                columns_rows: Size {
-                    width: cx as u16,
-                    height: cy as u16,
-                },
-                pixels: Size {
-                    width: px as u16,
-                    height: py as u16,
-                },
-            }))?;
-        };
-
-        Ok(())
-    }
-
-    async fn channel_close(&mut self, _: ChannelId, _: &mut server::Session) -> Result<()> {
-        ACTIVE_SESSIONS.dec();
-
-        if let State::PtyStarted(dashboard) = &mut self.state {
-            dashboard.stop().await?;
-        };
-
-        Ok(())
-    }
-
-    async fn channel_eof(&mut self, id: ChannelId, session: &mut server::Session) -> Result<()> {
-        session.close(id);
-
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self, session))]
-    async fn pty_request(
-        &mut self,
         id: ChannelId,
-        term: &str,
         cx: u32,
         cy: u32,
         px: u32,
         py: u32,
-        modes: &[(russh::Pty, u32)],
         session: &mut server::Session,
-    ) -> Result<()> {
-        let State::ChannelOpen(_, user_client) = self.state.borrow_mut() else {
-            UNEXPECTED_STATE
-                .with_label_values(&["ChannelOpen", self.state.as_ref()])
-                .inc();
-            return Err(eyre!("Unexpected state: {:?}", self.state));
+    ) -> Result<(), Self::Error> {
+        REQUESTS.window_resize.inc();
+
+        let writers = self.writers.lock().await;
+
+        let Some(writer) = writers.get(&id) else {
+            return Err(eyre!("no writer found for channel: {id}"));
         };
-
-        REQUESTS.pty.inc();
-
-        let mut dashboard = Dashboard::new(user_client.as_ref().clone());
-
-        dashboard.start(Channel::new(id, session.handle().clone()))?;
 
         #[allow(clippy::cast_possible_truncation)]
-        dashboard.send(Event::Resize(WindowSize {
+        writer.send(Event::Resize(WindowSize {
             columns_rows: Size {
                 width: cx as u16,
                 height: cy as u16,
@@ -452,8 +520,57 @@ impl server::Handler for Session {
             },
         }))?;
 
-        self.state.pty_started(dashboard);
+        session.channel_success(id);
 
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, _modes, session))]
+    async fn pty_request(
+        &mut self,
+        id: ChannelId,
+        term: &str,
+        cx: u32,
+        cy: u32,
+        px: u32,
+        py: u32,
+        _modes: &[(russh::Pty, u32)],
+        session: &mut server::Session,
+    ) -> Result<()> {
+        REQUESTS.pty.inc();
+        tracing::debug!("pty");
+
+        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
+            UNEXPECTED_STATE
+                .with_label_values(&["Authenticated", self.state.as_ref()])
+                .inc();
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        let channel = self.channels.remove(&id).ok_or_else(|| {
+            eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
+        })?;
+
+        let mut dashboard = Dashboard::new(user_client.as_ref().clone());
+
+        let writer = dashboard.start(
+            channel.into_stream(),
+            Channel::new(id, session.handle().clone()),
+        )?;
+
+        #[allow(clippy::cast_possible_truncation)]
+        writer.send(Event::Resize(WindowSize {
+            columns_rows: Size {
+                width: cx as u16,
+                height: cy as u16,
+            },
+            pixels: Size {
+                width: px as u16,
+                height: py as u16,
+            },
+        }))?;
+
+        self.writers.lock().await.insert(id, writer);
         session.channel_success(id);
 
         Ok(())
@@ -466,14 +583,14 @@ impl server::Handler for Session {
         name: &str,
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
-        let State::ChannelOpen(_, _) = self.state.borrow_mut() else {
+        tracing::debug!("subsystem: {name}");
+
+        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
             UNEXPECTED_STATE
                 .with_label_values(&["ChannelOpen", self.state.as_ref()])
                 .inc();
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
-
-        REQUESTS.sftp.inc();
 
         if name != "sftp" {
             session.channel_failure(id);
@@ -487,12 +604,15 @@ impl server::Handler for Session {
             return Ok(());
         }
 
-        let (channel, client) = self.state.take_channel_open()?;
+        REQUESTS.sftp.inc();
 
-        let handler = sftp::Handler::new(client.as_ref().clone());
+        let channel = self.channels.remove(&id).ok_or_else(|| {
+            eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
+        })?;
+
+        let handler = sftp::Handler::new(user_client.as_ref().clone());
         russh_sftp::server::run(channel.into_stream(), handler).await;
 
-        self.state.sftp_started();
         session.channel_success(id);
 
         Ok(())
@@ -510,5 +630,7 @@ impl Drop for Session {
                 .as_secs_f64()
                 / 60.0,
         );
+
+        self.tasks.abort_all();
     }
 }

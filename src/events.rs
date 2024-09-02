@@ -19,6 +19,7 @@ pub enum Event {
     Input(Input),
     Resize(WindowSize),
     Goto(Vec<String>),
+    Error(String),
     Shutdown,
     Render,
     Finished(Result<()>),

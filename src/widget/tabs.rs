@@ -132,7 +132,7 @@ impl Widget for TabbedView {
             .areas(body_area);
 
         if let Err(err) = self.current.draw(frame, nested) {
-            self.current = Box::new(Error::new(err));
+            self.current = Box::new(Error::from(err));
         }
 
         Ok(())

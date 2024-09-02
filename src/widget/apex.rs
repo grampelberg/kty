@@ -2,12 +2,13 @@ use eyre::Result;
 use ratatui::{layout::Rect, Frame};
 use tracing::{metadata::LevelFilter, Level};
 
-use super::{debug::Debug, pod, Widget};
+use super::{debug::Debug, error::Error, pod, propagate, Widget};
 use crate::events::{Broadcast, Event};
 
 pub struct Apex {
     pods: pod::List,
     debug: Option<Debug>,
+    error: Option<Error>,
 }
 
 impl Apex {
@@ -24,6 +25,7 @@ impl Apex {
         Self {
             pods: pod::List::new(client),
             debug,
+            error: None,
         }
     }
 }
@@ -32,12 +34,28 @@ impl Apex {
 // elements.
 impl Widget for Apex {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        if let Event::Error(err) = event {
+            self.error = Some(Error::from(err.clone()));
+
+            return Ok(Broadcast::Consumed);
+        }
+
+        if let Some(error) = self.error.as_mut() {
+            propagate!(error.dispatch(event), self.error = None);
+        }
+
         self.pods.dispatch(event)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         if let Some(debug) = self.debug.as_mut() {
             debug.draw(frame, area)?;
+        }
+
+        if let Some(error) = self.error.as_mut() {
+            error.draw(frame, area)?;
+
+            return Ok(());
         }
 
         self.pods.draw(frame, area)

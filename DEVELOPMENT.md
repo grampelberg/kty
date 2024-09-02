@@ -41,3 +41,22 @@ When you run `just dev-push`, an image at `kuberift:5432/kuberift:latest` will
 be available to run inside the cluster.
 
 [k3d]: https://k3d.io/v5.6.3/#releases
+
+## Forwarding
+
+If testing port forwarding and running the service locally (aka not on the
+cluster), you won't have access to any of the DNS or IP addresses that might be
+forwarded. To work around this, modify `/etc/hosts`:
+
+```txt
+127.0.0.1 localhost.default.svc
+```
+
+Then you'll be able to test forwarding to localhost via:
+
+```bash
+ssh -L 9090:svc/default/localhost:9091 me@localhost -p 2222
+```
+
+Testing `pods` and `nodes` requires running on the cluster as the response from
+`addr` for those is IP addresses.

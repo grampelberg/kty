@@ -272,7 +272,7 @@ impl Table {
         match widget.dispatch(event) {
             Ok(result) => Ok(result),
             Err(err) => {
-                self.state.detail(Box::new(Error::new(err)));
+                self.state.detail(Box::new(Error::from(err)));
 
                 Ok(Broadcast::Consumed)
             }
