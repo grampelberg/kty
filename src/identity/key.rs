@@ -123,7 +123,7 @@ impl Authenticate for PublicKey {
     // - validate the expiration
     // - should there be a status field or condition for an existing key?
     #[tracing::instrument(skip(self, ctrl))]
-    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<kube::Client>> {
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<Identity>> {
         let keys: Api<Key> = Api::default_namespaced(ctrl.client()?);
 
         let Some(key): Option<Key> = keys.get_opt(&self.kube_id()?).await? else {
@@ -134,21 +134,21 @@ impl Authenticate for PublicKey {
             return Ok(None);
         }
 
-        let user_client = Identity::authenticate(&key.clone().into(), ctrl).await?;
+        let Some(ident) = Identity::authenticate(&key.clone().into(), ctrl).await? else {
+            return Ok(None);
+        };
 
-        if user_client.is_some() {
-            keys.patch_status(
-                &key.name_any(),
-                &PatchParams::apply(MANAGER).force(),
-                &Patch::Apply(&Key::patch(&json!({
-                    "status": {
-                        "last_used": Some(Utc::now()),
-                    }
-                }))?),
-            )
-            .await?;
-        }
+        keys.patch_status(
+            &key.name_any(),
+            &PatchParams::apply(MANAGER).force(),
+            &Patch::Apply(&Key::patch(&json!({
+                "status": {
+                    "last_used": Some(Utc::now()),
+                }
+            }))?),
+        )
+        .await?;
 
-        Ok(user_client)
+        Ok(Some(ident))
     }
 }

@@ -45,7 +45,7 @@ kubectl create clusterrolebinding foo-bar-com --clusterrole=<my-role> --user=foo
 Note that you can use a `RoleBinding` instead, but only for specific
 functionality.
 
-### SSH RBAC
+### SSH
 
 The minimum permissions are:
 
@@ -71,7 +71,7 @@ verbs: ['create']
 Note: without the full permissions it is possible that the dashboard has some
 issues rendering.
 
-### Port Forwarding RBAC
+### Ingress Tunnel (`ssh -L`)
 
 For each supported resource type (nodes, services, pods), you need:
 
@@ -106,7 +106,16 @@ rules:
       - get
 ```
 
-### SFTP(SCP) RBAC
+### Egress Tunnel (`ssh -L`)
+
+The minimum permissions are:
+
+```yaml
+resources: ['services', 'endpointslices']
+verbs: ['patch']
+```
+
+### SFTP(SCP)
 
 To support `scp`, the minimum permissions are:
 

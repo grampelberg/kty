@@ -96,6 +96,10 @@ spec:
               value: {{ .clientID }}
             - name: KUBERIFT_OID_CONFIG_URL
               value: {{ .configURL }}
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
           {{- end }}
 
           {{- if .resources}}

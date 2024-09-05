@@ -12,7 +12,8 @@ You can:
 - Access the logs for running and exited containers in a pod.
 - Forward a local port remotely, allowing access to services and pods in the
   cluster.
-  - `scp` files from pods. sftp clients work as well.
+- Forward a remote service to your local system.
+- `scp` files from pods. sftp clients work as well.
 
 ![demo](./assets/demo.gif)
 
@@ -77,7 +78,7 @@ ssh anything@my-remote-host-or-ip -p 2222
 The provided username is not used as your identity is authenticated via other
 mechanisms.
 
-### Port Forward
+### Ingress Tunnel (`ssh -L`)
 
 You can forward requests from a local port into a resource on the remote
 cluster. The supported resources are `nodes`, `pods` and `services`. See the
@@ -107,6 +108,19 @@ With that running in one terminal, you can run this in another:
 ```bash
 ssh my-node-username@localhost -p 3333
 ```
+
+### Egress Tunnel (`ssh -R`)
+
+You can forward a remote service on your cluster to a port on your local host.
+
+To forward port 8080 on service `default/kuberift` to port `9090` on your local
+system, you can run:
+
+```bash
+ssh me@my-cluster -p 2222 -R default/kuberift:8080:localhost:9090
+```
+
+The format for service definitions is `<namespace>/<service-name>`.
 
 ### SFTP
 
