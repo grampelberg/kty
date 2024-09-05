@@ -16,11 +16,21 @@ use crate::ssh::{Authenticate, Controller};
 pub struct Identity {
     pub name: String,
     pub groups: Vec<String>,
+    pub method: Option<String>,
 }
 
 impl Identity {
     pub fn new(name: String, groups: Vec<String>) -> Self {
-        Self { name, groups }
+        Self {
+            name,
+            groups,
+            method: None,
+        }
+    }
+
+    pub fn method(mut self, method: String) -> Self {
+        self.method = Some(method);
+        self
     }
 
     pub fn client(&self, ctrl: &Controller) -> Result<kube::Client, kube::Error> {
@@ -31,7 +41,7 @@ impl Identity {
 #[async_trait::async_trait]
 impl Authenticate for Identity {
     #[tracing::instrument(skip(self, ctrl))]
-    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<kube::Client>> {
+    async fn authenticate(&self, ctrl: &Controller) -> Result<Option<Identity>> {
         let client = self.client(ctrl)?;
 
         let access = Api::<SelfSubjectAccessReview>::all(client.clone())
@@ -55,7 +65,7 @@ impl Authenticate for Identity {
             return Ok(None);
         }
 
-        Ok(Some(client))
+        Ok(Some(self.clone()))
     }
 }
 
@@ -74,6 +84,7 @@ impl From<key::Key> for Identity {
         Self {
             name: key.spec.user,
             groups: key.spec.groups,
+            method: Some("public_key".to_string()),
         }
     }
 }

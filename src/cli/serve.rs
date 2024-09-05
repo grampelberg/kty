@@ -1,20 +1,21 @@
-use std::{net::IpAddr, path::Path};
+use std::{net::IpAddr, path::Path, sync::Arc};
 
-use cata::{output::Format, Command, Container};
+use cata::{Command, Container};
 use clap::Parser;
-use eyre::Result;
+use eyre::{eyre, Result};
 use kube::{api::Api, runtime::events::Reporter};
 use pkcs8::{Document, PrivateKeyInfo};
 use russh::{server::Config, MethodSet};
 use russh_keys::key::KeyPair;
 use ssh_key::PrivateKey;
+use strum::VariantArray;
 use warp::Filter;
 
 use crate::{
     health,
     openid::{self, Fetch},
     resources,
-    ssh::{self, ControllerBuilder},
+    ssh::{self, ControllerBuilder, CurrentPodBuilder, Features},
 };
 
 static CLIENT_ID: &str = "P3g7SKU42Wi4Z86FnNDqfiRtQRYgWsqx";
@@ -24,9 +25,6 @@ static CONTROLLER_NAME: &str = "ssh.kuberift.com";
 
 #[derive(Parser, Container)]
 pub struct Serve {
-    #[clap(from_global)]
-    output: Format,
-
     // TODO(thomas): fetch these from the CRD
     #[clap(long, default_value = "1hr")]
     inactivity_timeout: humantime::Duration,
@@ -41,11 +39,14 @@ pub struct Serve {
     #[clap(long, default_value = "email")]
     claim: String,
 
+    /// Address to listen on.
     #[clap(long, default_value = "127.0.0.1")]
     address: String,
 
+    /// Port to listen on for SSH connections.
     #[clap(long, default_value = "2222")]
     ssh_port: u16,
+    /// Port to listen on for health and metrics related endpoints.
     #[clap(long, default_value = "8080")]
     health_port: u16,
 
@@ -56,8 +57,39 @@ pub struct Serve {
     #[clap(long, value_parser = load_key, default_value = "")]
     key: KeyPair,
 
+    /// Do not create (or update) resources on startup. This allows for reduced
+    /// permissions but requires management of the CRDs out of band.
     #[clap(long)]
     no_create: bool,
+
+    /// Features to enable for the server. See documentation for more details
+    /// about what the features do.
+    #[clap(
+        long,
+        value_enum,
+        default_values_t = Features::VARIANTS,
+    )]
+    features: Vec<Features>,
+
+    /// Name of where this is running. Must be set if `egress-tunnel` is
+    /// enabled. Used as part of `egress-tunnel` for the `ObjectReference`
+    /// and `OwnerReference` on created `EndpointSlice`.
+    #[clap(long, env = "HOSTNAME", default_value_t = hostname::get().unwrap_or_default().to_string_lossy().to_string())]
+    pod_name: String,
+
+    /// UID of the pod where this is running. Must be set if `egress-tunnel` is
+    /// enabled. Used as part of `egress-tunnel` for the `OwnerReference` on
+    /// created `EndpointSlice`.
+    #[clap(long, env = "POD_UID", default_value = "")]
+    pod_uid: String,
+
+    /// IP that can be used to reach this server. Must be set if `egress-tunnel`
+    /// is enabled. If running off-cluster, such as during development, set this
+    /// to something that is reachable from inside the cluster. For example, you
+    /// can use `host.docker.internal` to get the IP address that is reachable
+    /// when running on a local cluster.
+    #[clap(long, env = "POD_IP", default_value_t = local_ip_address::local_ip().unwrap_or("127.0.0.1".parse().unwrap()))]
+    pod_ip: IpAddr,
 }
 
 impl Serve {
@@ -80,12 +112,26 @@ impl Serve {
         };
 
         let ctrl = ControllerBuilder::default()
+            .current(
+                CurrentPodBuilder::default()
+                    .namespace(cfg.default_namespace.clone())
+                    .name(self.pod_name.clone())
+                    .uid(self.pod_uid.clone())
+                    .addr(self.pod_ip)
+                    .build()?,
+            )
             .config(cfg)
             .reporter(Some(reporter.clone()))
             .build()?;
 
         if !self.no_create {
             resources::create(&Api::all(ctrl.client()?), true).await?;
+        }
+
+        if self.features.contains(&Features::EgressTunnel) && self.pod_uid.is_empty() {
+            return Err(eyre!(
+                "--pod-name, --pod-uid and --pod-ip are required when egress-tunnel is enabled"
+            ));
         }
 
         let server_cfg = Config {
@@ -103,17 +149,20 @@ impl Serve {
         let cfg = openid::Config::fetch(&self.openid_configuration).await?;
         let jwks = cfg.jwks().await?;
 
-        ssh::UIServer::new(
-            ctrl,
-            openid::ProviderBuilder::default()
-                .claim(self.claim.clone())
-                .client_id(self.client_id.clone())
-                .config(cfg)
-                .jwks(jwks)
-                .build()?,
-        )
-        .run(server_cfg, (self.address.clone(), self.ssh_port))
-        .await
+        ssh::UIServerBuilder::default()
+            .controller(Arc::new(ctrl))
+            .identity_provider(Arc::new(
+                openid::ProviderBuilder::default()
+                    .claim(self.claim.clone())
+                    .client_id(self.client_id.clone())
+                    .config(cfg)
+                    .jwks(jwks)
+                    .build()?,
+            ))
+            .features(self.features.clone())
+            .build()?
+            .run(server_cfg, (self.address.clone(), self.ssh_port))
+            .await
     }
 }
 

@@ -3,18 +3,8 @@
 The `kuberift` server needs access to your cluster's API server and credentials
 to connect to it. There are a couple ways to do this:
 
-- On cluster - you can run it on cluster. Check out the [helm chart][helm-chart]
-  for an easy way to get started. By running it on cluster, you get access and
-  credentials automatically. The server then needs to be exposed so that you can
-  connect to it. This can be done by any TCP load balancer. If you're running in
-  the cloud, setting the server's service to `type: LoadBalancer` is the
-  easiest. Alternatives include using the [gateway api][gateway-api] or
-  configuring your ingress controller to route TCP.
-- Off cluster - if you're already using jump hosts to get into your cluster,
-  kuberift can run there. All you need to do is create a `kubeconfig` that uses
-  the correct service account. There are [some plugins][sa-plugin] to make this
-  easy. You'll still need a valid `ClusterRole` and `ClusterRoleBinding` setup.
-  Take a look at the sample [rbac][helm-rbac] to see what do to there.
+- [On cluster](#on-cluster)
+- [Off cluster](#off-cluster)
 
 [gateway-api]: https://gateway-api.sigs.k8s.io
 [helm-chart]: #helm
@@ -22,7 +12,46 @@ to connect to it. There are a couple ways to do this:
   https://github.com/superbrothers/kubectl-view-serviceaccount-kubeconfig-plugin
 [helm-rbac]: helm/templates/rbac.yaml
 
-## Helm
+## Features
+
+All the functionality is controlled via feature flags in the server:
+
+- `pty` - Dashboard when `ssh` happens.
+- `sftp` - Enables `scp` and `sftp`.
+- `ingress-tunnel` - Provides `ssh -L` forwarding from a local port to the
+  cluster.
+- `egress-tunnel` - Provides `ssh -R` forwarding from the cluster to a local
+  port.
+
+## Bring Your Own Provider
+
+By default, kuberift provides Github and Google authentication via.
+[auth0][auth0]. To get your own setup using auth0, check out their
+[instructions][auth0-setup].
+
+You can, alternatively, use your own provider. It must support the [device
+code][device-code] flow and have a URL that has the openid configuration. Take a
+look at the configuration for `kuberift serve` for the required values.
+
+[auth0]: https://auth0.com
+[auth0-setup]:
+  https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow/call-your-api-using-the-device-authorization-flow#prerequisites
+[device-code]: https://www.oauth.com/oauth2-servers/device-flow/
+
+## On-Cluster
+
+Check out the [helm chart][helm-chart] for an easy way to get started. If not
+using helm, there are some things to be aware of:
+
+- Credentials need to be mounted into the pod, see [Server RBAC](#server-rbac)
+  for a minimal list of permissions.
+- You need the pod to be reachable from where you're running `ssh`. This can be
+  done by any TCP load balancer. If you're running in the cloud, setting the
+  server's service to `type: LoadBalancer` is the easiest. Alternatives include
+  using the [gateway api][gateway-api] or configuring your ingress controller to
+  route TCP.
+
+### Helm
 
 There is a provided `getting-started.yaml` set of values. To install this on
 your cluster, you can run:
@@ -45,20 +74,21 @@ For more detailed instructions, take a look at the [README][helm-readme].
 
 [helm-readme]: helm/README.md
 
-## Bring Your Own Provider
+## Off-Cluster
 
-By default, kuberift provides Github and Google authentication via.
-[auth0][auth0]. To get your own setup using auth0, check out their
-[instructions][auth0-setup].
+If you're already using jump hosts to get into your cluster, kuberift can run
+there. Here are some things to be aware of:
 
-You can, alternatively, use your own provider. It must support the [device
-code][device-code] flow and have a URL that has the openid configuration. Take a
-look at the configuration for `kuberift serve` for the required values.
-
-[auth0]: https://auth0.com
-[auth0-setup]:
-  https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow/call-your-api-using-the-device-authorization-flow#prerequisites
-[device-code]: https://www.oauth.com/oauth2-servers/device-flow/
+- Provide credentials by creating a `kubeconfig` that uses the correct service
+  account. here are [some plugins][sa-plugin] to make this easy. You'll still
+  need a valid `ClusterRole` and `ClusterRoleBinding` setup. Take a look at the
+  sample [rbac][helm-rbac] to see what do to there.
+- For `ingress-tunnel` support, you'll need to have the server running on a
+  network that can reach IP addresses in the cluster (nodes, pods) and can
+  resolve cluster DNS.
+- For `egress-tunnel` support, you'll need to have the server itself reachable
+  from any pod in the cluster. In addition, make sure to configure `--pod-name`,
+  `--pod-uid` and `--pod-ip` to some real values in the `serve` command.
 
 ## Server RBAC
 
@@ -68,9 +98,8 @@ The kuberift server needs to be able to:
 - Manage `keys`.
 - Optionally update the CRDs.
 
-To do the minimum of this, you can use the following `ClusterRole` + `Role`. For
-a more in-depth example, take a look at the
-[helm config](helm/templates/rbac.yaml).
+To do the minimum of this, you can use the following `ClusterRole`. For a more
+in-depth example, take a look at the [helm config](helm/templates/rbac.yaml).
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -78,28 +107,14 @@ kind: ClusterRole
 metadata:
 name: impersonator
 rules:
-  - apiGroups:
-      - ''
+  - apiGroups: ['']
     resources:
       - users
       - groups
     verbs:
-      - 'impersonate'
+      - impersonate
     # Restrict the groups/users that can be impersonated through kuberift.
     # resourceNames:
     #   - foo@bar.com
     #   - my_group
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-name: kuberift
-rules:
-  - apiGroups:
-      - 'key.kuberift.com'
-    resources:
-      - keys
-    verbs:
-      - '*'
----
 ```

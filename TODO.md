@@ -1,5 +1,10 @@
 # TODO
 
+## Documentation
+
+- Get a full architecture explanation together.
+- Explain "how it works" for each piece of functionality.
+
 ## Authorization
 
 - Groups are probably what most users are going to want to use to configure all
@@ -49,6 +54,14 @@
 - Enable `ssh -L` for forwarding requests _into_ a pod.
 - Enable `ssh -R` for forwarding a remote service _into_ a localhost.
 
-## TCP/IP Forwarding
+## Ingress Tunnel
 
-- Implement `-R` for proxying from the cluster to localhost.
+## Egress Tunnel
+
+- Display error for when the `tcpip_forward` address is `localhost`.
+- Need some way to do cleanup and lifecycle management of endpoints and
+  services.
+
+## Build
+
+- Move client_id and config_url to a build-time concern.

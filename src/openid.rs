@@ -180,7 +180,7 @@ impl Provider {
 
         // TODO: add groups via claim to the identity.
         Ok((
-            Identity::new(name.as_str().unwrap().into(), Vec::new()),
+            Identity::new(name.as_str().unwrap().into(), Vec::new()).method("openid".into()),
             chrono::Utc::now() + oauth_token.expires_in,
         ))
     }

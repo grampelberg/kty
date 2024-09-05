@@ -1,6 +1,6 @@
 pub mod proc;
 
-use std::{borrow::Borrow, cmp::Ordering, error::Error, fmt::Display, sync::Arc};
+use std::{borrow::Borrow, cmp::Ordering, error::Error, fmt::Display, net::IpAddr, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
 use k8s_openapi::{
@@ -103,6 +103,7 @@ pub trait PodExt {
     fn restarts(&self) -> String;
     fn status(&self) -> Phase;
     fn containers(&self, filter: Option<String>) -> Vec<Container>;
+    fn ip(&self) -> Option<IpAddr>;
 }
 
 impl PodExt for Pod {
@@ -251,6 +252,18 @@ impl PodExt for Pod {
             .into_iter()
             .filter(|c| filter.as_ref().map_or(true, |f| c.name_any().contains(f)))
             .collect()
+    }
+
+    fn ip(&self) -> Option<IpAddr> {
+        let Some(status) = &self.status else {
+            return None;
+        };
+
+        let Some(pod_ip) = &status.pod_ip else {
+            return None;
+        };
+
+        pod_ip.parse().ok()
     }
 }
 

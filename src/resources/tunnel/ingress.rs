@@ -1,102 +1,98 @@
-use std::{pin::Pin, time::Duration};
+use std::time::Duration;
 
-use chrono::Utc;
 use eyre::{eyre, Result};
-use futures::{future::join_all, Future};
 use k8s_openapi::api::{
     authorization::v1::{ResourceAttributes, SelfSubjectAccessReview, SelfSubjectAccessReviewSpec},
     core::v1::{Node, Pod, Service},
 };
 use kube::{api::PostParams, core::ErrorResponse, Api, Resource};
-use lazy_static::lazy_static;
-use prometheus::{
-    histogram_opts, opts, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
-    HistogramVec, IntCounterVec, IntGaugeVec,
-};
-use prometheus_static_metric::make_static_metric;
 use russh::server::{self};
 use tokio::net::TcpStream;
 
-make_static_metric! {
-    pub struct ResourceVec: IntCounter {
-        "resource" => {
-            pod,
-            service,
-            node,
-        },
-        "direction" => {
-            ingress,
-            egress,
-        }
-    }
-    pub struct ResourceGaugeVec: IntGauge {
-        "resource" => {
-            pod,
-            service,
-            node,
-        },
-        "direction" => {
-            ingress,
-            egress,
-        }
-    }
-}
-
-lazy_static! {
-    static ref STREAM_DURATION: HistogramVec = register_histogram_vec!(
-        histogram_opts!(
-            "stream_duration_seconds",
-            "Stream duration",
-            vec!(0.1, 0.2, 0.3, 0.5, 0.8, 1.3, 2.1),
-        ),
-        &["resource", "direction"]
-    )
-    .unwrap();
-    static ref STREAM_BYTES: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "stream_bytes_total",
-            "Total number of bytes streamed by resource and direction"
-        ),
-        &["resource", "direction", "destination"]
-    )
-    .unwrap();
-    static ref STREAM_TOTAL_VEC: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "stream_total",
-            "Total number of streams by resource and direction"
-        ),
-        &["resource", "direction"]
-    )
-    .unwrap();
-    static ref STREAM_TOTAL: ResourceVec = ResourceVec::from(&STREAM_TOTAL_VEC);
-    static ref STREAM_ACTIVE_VEC: IntGaugeVec = register_int_gauge_vec!(
-        opts!(
-            "stream_active",
-            "Number of active streams by resource and direction"
-        ),
-        &["resource", "direction"]
-    )
-    .unwrap();
-    static ref STREAM_ACTIVE: ResourceGaugeVec = ResourceGaugeVec::from(&STREAM_ACTIVE_VEC);
-}
+use super::{stream, StreamMetrics};
 
 static CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
+pub struct Ingress {
+    host: Host,
+    port: u16,
+}
+
+impl Ingress {
+    pub fn new(host: &str, port: u16) -> Result<Self> {
+        Ok(Self {
+            host: Host::new(host)?,
+            port,
+        })
+    }
+
+    pub fn host(&self) -> String {
+        self.host.to_string()
+    }
+
+    pub async fn run(
+        &self,
+        client: kube::Client,
+        mut channel: russh::Channel<server::Msg>,
+    ) -> Result<()> {
+        let addr = self.host.addr(client.clone()).await?;
+
+        tracing::debug!(
+            resource = self.host.resource(),
+            direction = "ingress",
+            activity = "tunnel::ingress",
+            "connection",
+        );
+
+        let mut remote = tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            TcpStream::connect((addr.as_str(), self.port)),
+        )
+        .await
+        .map_err(|_| {
+            eyre!(
+                "connect to {addr}:{} timed out after {}s",
+                self.port,
+                CONNECT_TIMEOUT.as_secs_f32()
+            )
+        })?
+        .map_err(|e| eyre!(e).wrap_err(format!("connect to {addr}:{} failed", self.port)))?;
+
+        tracing::debug!("connected to {}:{}", self.host, self.port);
+
+        let (dest_read, dest_write) = remote.split();
+        let src_write = channel.make_writer();
+        let src_read = channel.make_reader();
+
+        stream(
+            (src_read, src_write),
+            (dest_read, dest_write),
+            StreamMetrics {
+                resource: self.host.resource(),
+                direction: "ingress",
+            },
+        )
+        .await?;
+
+        tracing::debug!("connection lost for {}:{}", self.host, self.port);
+
+        Ok(())
+    }
+}
+
 struct Host {
-    client: kube::Client,
     resource: String,
     segments: Vec<String>,
 }
 
 impl Host {
-    fn new(client: kube::Client, host: &str) -> Result<Self> {
+    fn new(host: &str) -> Result<Self> {
         let segments: Vec<String> = host
             .split('/')
             .map(std::string::ToString::to_string)
             .collect();
 
         Ok(Self {
-            client,
             resource: match segments
                 .first()
                 .map(std::string::String::as_str)
@@ -115,13 +111,19 @@ impl Host {
         self.resource.as_str()
     }
 
-    async fn addr(&self) -> Result<String> {
+    async fn addr(&self, client: kube::Client) -> Result<String> {
         match self.resource() {
-            "pods" => Pod::get_host(self.client.clone(), &self.segments[1..]).await,
-            "services" => Service::get_host(self.client.clone(), &self.segments[1..]).await,
-            "nodes" => Node::get_host(self.client.clone(), &self.segments[1..]).await,
+            "pods" => Pod::get_host(client, &self.segments[1..]).await,
+            "services" => Service::get_host(client, &self.segments[1..]).await,
+            "nodes" => Node::get_host(client, &self.segments[1..]).await,
             x => Err(eyre!("resource {x} not supported")),
         }
+    }
+}
+
+impl std::fmt::Display for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.segments.join("/"))
     }
 }
 
@@ -140,81 +142,6 @@ async fn access(client: kube::Client, attrs: ResourceAttributes) -> Result<bool>
         .await?;
 
     Ok(access.status.map_or(false, |status| status.allowed))
-}
-
-pub async fn direct(
-    mut channel: russh::Channel<server::Msg>,
-    client: kube::Client,
-    host: String,
-    port: u16,
-) -> Result<()> {
-    let start = Utc::now();
-
-    let lookup = Host::new(client.clone(), host.as_str())?;
-    STREAM_TOTAL_VEC
-        .with_label_values(&[lookup.resource(), "ingress"])
-        .inc();
-    tracing::debug!(
-        resource = lookup.resource(),
-        direction = "ingress",
-        activity = "forward::tcpip",
-        "connection",
-    );
-
-    let addr = lookup.addr().await?;
-
-    let mut stream =
-        tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((addr.as_str(), port)))
-            .await
-            .map_err(|_| {
-                eyre!(
-                    "connect to {addr}:{port} timed out after {}s",
-                    CONNECT_TIMEOUT.as_secs_f32()
-                )
-            })?
-            .map_err(|e| eyre!(e).wrap_err(format!("connect to {addr}:{port} failed")))?;
-
-    tracing::debug!("connected to {}:{}", host, port);
-
-    STREAM_ACTIVE_VEC
-        .with_label_values(&[lookup.resource(), "ingress"])
-        .inc();
-
-    let (mut dest_read, mut dest_write) = stream.split();
-    let mut src_write = channel.make_writer();
-    let mut src_read = channel.make_reader();
-
-    let mut bytes = join_all::<Vec<Pin<Box<dyn Future<Output = _> + Send>>>>(vec![
-        Box::pin(tokio::io::copy(&mut src_read, &mut dest_write)),
-        Box::pin(tokio::io::copy(&mut dest_read, &mut src_write)),
-    ])
-    .await;
-
-    STREAM_ACTIVE_VEC
-        .with_label_values(&[lookup.resource(), "ingress"])
-        .dec();
-    STREAM_DURATION
-        .with_label_values(&[lookup.resource(), "ingress"])
-        .observe(
-            (Utc::now() - start)
-                .to_std()
-                .expect("duration in range")
-                .as_secs_f64(),
-        );
-
-    let outgoing = bytes.pop().expect("outgoing bytes")?;
-    let incoming = bytes.pop().expect("incoming bytes")?;
-
-    STREAM_BYTES
-        .with_label_values(&[lookup.resource(), "ingress", "incoming"])
-        .inc_by(incoming);
-    STREAM_BYTES
-        .with_label_values(&[lookup.resource(), "ingress", "outgoing"])
-        .inc_by(outgoing);
-
-    tracing::debug!("connection lost for {}:{}", host, port);
-
-    Ok(())
 }
 
 trait Proxy {
