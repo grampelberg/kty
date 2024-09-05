@@ -3,7 +3,7 @@ pub mod container;
 pub mod file;
 pub mod pod;
 pub mod store;
-pub mod stream;
+pub mod tunnel;
 
 use color_eyre::Section;
 use eyre::{eyre, Result};

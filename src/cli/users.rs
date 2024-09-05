@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::{
     identity::{key, Identity},
     resources::KubeID,
-    ssh::{Authenticate, Controller},
+    ssh::{Authenticate, ControllerBuilder},
 };
 
 #[derive(Parser, Container)]
@@ -49,7 +49,9 @@ impl Command for Check {
     async fn run(&self) -> Result<()> {
         let identity = Identity::new(self.id.clone(), self.groups.clone());
 
-        let ctrl = Controller::new(kube::Config::infer().await?);
+        let ctrl = ControllerBuilder::default()
+            .config(kube::Config::infer().await?)
+            .build()?;
 
         if identity.authenticate(&ctrl).await?.is_some() {
             println!("{identity} has access");

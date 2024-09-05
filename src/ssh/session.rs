@@ -1,14 +1,10 @@
 mod sftp;
 mod state;
 
-use std::{
-    borrow::{BorrowMut, Cow},
-    collections::HashMap,
-    str,
-    sync::Arc,
-};
+use std::{borrow::Cow, collections::HashMap, str, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use derive_builder::Builder;
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
 use lazy_static::lazy_static;
@@ -30,13 +26,14 @@ use tokio::{
 };
 use tracing::debug;
 
+use super::Features;
 use crate::{
     dashboard::Dashboard,
     events::Event,
     identity::Key,
     io::Channel,
     openid,
-    resources::stream::direct,
+    resources::tunnel::{Egress, Ingress},
     ssh::{Authenticate, Controller},
 };
 
@@ -193,35 +190,35 @@ fn token_response(error: Report) -> Result<Auth> {
     Err(http_error.into())
 }
 
+#[derive(Builder)]
+#[builder(pattern = "owned")]
 pub struct Session {
     controller: Arc<Controller>,
     identity_provider: Arc<openid::Provider>,
+    features: Vec<Features>,
 
+    #[builder(default)]
     start: DateTime<Utc>,
+    #[builder(default)]
     state: State,
+    #[builder(default)]
     tasks: JoinSet<Result<()>>,
 
     // Channels are created in the `channel_open_session` method and removed when a request comes
     // in for that channel, such as a `pty_request`.
+    #[builder(default)]
     channels: HashMap<ChannelId, russh::Channel<server::Msg>>,
 
     // Subsystem requests add a writer when they are created and can handle input. This allows for
     // cross-request communication - such as error reporting in the dashboard from forwarded
     // connections.
+    #[builder(default)]
     writers: Arc<Mutex<HashMap<ChannelId, UnboundedSender<Event>>>>,
 }
 
 impl Session {
-    pub fn new(controller: Arc<Controller>, identity_provider: Arc<openid::Provider>) -> Self {
-        Self {
-            controller,
-            identity_provider,
-            start: Utc::now(),
-            tasks: JoinSet::new(),
-            state: State::Unauthenticated,
-            channels: HashMap::new(),
-            writers: Arc::new(Mutex::new(HashMap::new())),
-        }
+    fn enabled(&self, feature: &Features) -> bool {
+        self.features.contains(feature)
     }
 
     #[tracing::instrument(skip(self))]
@@ -286,7 +283,7 @@ impl Session {
         // try again (3 times by default).
         self.state.code_used();
 
-        let Some(user_client) = id.authenticate(&self.controller).await? else {
+        let Some(ident) = id.authenticate(&self.controller).await? else {
             AUTH_RESULTS.interactive.reject.inc();
 
             self.state.invalid_identity(id);
@@ -296,7 +293,7 @@ impl Session {
             });
         };
 
-        self.state.authenticated(user_client, "openid".into());
+        self.state.authenticated(ident);
 
         if let Some(user_key) = key {
             Key::from_identity(user_key, &id, expiration)?
@@ -321,10 +318,10 @@ impl server::Handler for Session {
 
         self.state.key_offered(key);
 
-        if let Some(client) = key.authenticate(&self.controller).await? {
+        if let Some(ident) = key.authenticate(&self.controller).await? {
             AUTH_RESULTS.publickey.accept.inc();
 
-            self.state.authenticated(client, "publickey".into());
+            self.state.authenticated(ident);
 
             return Ok(Auth::Accept);
         }
@@ -365,14 +362,18 @@ impl server::Handler for Session {
     // TODO: add some kind of event to log successful authentication.
     #[tracing::instrument(skip(self, _session))]
     async fn auth_succeeded(&mut self, _session: &mut server::Session) -> Result<()> {
-        let State::Authenticated(_, ref method) = self.state else {
+        let State::Authenticated(identity) = &self.state else {
             UNEXPECTED_STATE
                 .with_label_values(&["Authenticated", self.state.as_ref()])
                 .inc();
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        AUTH_SUCEEDED.with_label_values(&[method]).inc();
+        let Some(method) = &identity.method else {
+            return Err(eyre!("unexpected identity"));
+        };
+
+        AUTH_SUCEEDED.with_label_values(&[method.as_str()]).inc();
 
         debug!(method, "authenticated");
 
@@ -422,30 +423,36 @@ impl server::Handler for Session {
         session: &mut server::Session,
     ) -> Result<bool, Self::Error> {
         CHANNELS.direct_tcpip.inc();
-        tracing::debug!("direct");
+        tracing::debug!("ingress-tunnel");
 
-        let id = channel.id();
-        let handle = session.handle();
+        if !self.enabled(&Features::IngressTunnel) {
+            session.channel_failure(channel.id());
 
-        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
+            return Ok(false);
+        }
+
+        let State::Authenticated(identity) = &self.state else {
             UNEXPECTED_STATE
                 .with_label_values(&["Authenticated", self.state.as_ref()])
                 .inc();
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let connection_string = host_to_connect.to_string();
+        let id = channel.id();
+        let handle = session.handle();
         let writers = self.writers.clone();
-        let client = user_client.as_ref().clone();
-        let host = host_to_connect.to_string();
+        let client = identity.client(&self.controller)?;
+
+        #[allow(clippy::cast_possible_truncation)]
+        let ingress = Ingress::new(host_to_connect, port_to_connect as u16)?;
 
         self.tasks.spawn(async move {
             #[allow(clippy::cast_possible_truncation)]
-            let result = match direct(channel, client, host.clone(), port_to_connect as u16).await {
+            match ingress.run(client, channel).await {
                 Ok(()) => Ok(()),
                 Err(e) => {
                     let e = e
-                        .wrap_err(format!("failed to open connection to {connection_string}"))
+                        .wrap_err(format!("failed to open connection to {}", ingress.host()))
                         .wrap_err("unable to forward connection");
 
                     let writers = writers.lock().await;
@@ -461,28 +468,11 @@ impl server::Handler for Session {
 
                     Err(e)
                 }
-            };
-
-            result
+            }
         });
 
         Ok(true)
     }
-
-    // #[tracing::instrument(skip(self, channel, session))]
-    // async fn channel_open_forwarded_tcpip(
-    //     &mut self,
-    //     channel: russh::Channel<server::Msg>,
-    //     host_to_connect: &str,
-    //     port_to_connect: u32,
-    //     originator_address: &str,
-    //     originator_port: u32,
-    //     session: &mut server::Session,
-    // ) -> Result<bool, Self::Error> {
-    //     tracing::info!("forward");
-
-    //     Ok(false)
-    // }
 
     #[tracing::instrument(skip(self, data))]
     async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
@@ -540,7 +530,13 @@ impl server::Handler for Session {
         REQUESTS.pty.inc();
         tracing::debug!("pty");
 
-        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
+        if !self.enabled(&Features::Pty) {
+            session.channel_failure(id);
+
+            return Ok(());
+        }
+
+        let State::Authenticated(identity) = &self.state else {
             UNEXPECTED_STATE
                 .with_label_values(&["Authenticated", self.state.as_ref()])
                 .inc();
@@ -551,7 +547,7 @@ impl server::Handler for Session {
             eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
         })?;
 
-        let mut dashboard = Dashboard::new(user_client.as_ref().clone());
+        let mut dashboard = Dashboard::new(identity.client(&self.controller)?);
 
         let writer = dashboard.start(
             channel.into_stream(),
@@ -585,7 +581,7 @@ impl server::Handler for Session {
     ) -> Result<(), Self::Error> {
         tracing::debug!("subsystem: {name}");
 
-        let State::Authenticated(user_client, _) = self.state.borrow_mut() else {
+        let State::Authenticated(identity) = &self.state else {
             UNEXPECTED_STATE
                 .with_label_values(&["ChannelOpen", self.state.as_ref()])
                 .inc();
@@ -606,16 +602,73 @@ impl server::Handler for Session {
 
         REQUESTS.sftp.inc();
 
+        if !self.enabled(&Features::Sftp) {
+            session.channel_failure(id);
+
+            return Ok(());
+        }
+
         let channel = self.channels.remove(&id).ok_or_else(|| {
             eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
         })?;
 
-        let handler = sftp::Handler::new(user_client.as_ref().clone());
+        let handler = sftp::Handler::new(identity.client(&self.controller)?);
         russh_sftp::server::run(channel.into_stream(), handler).await;
 
         session.channel_success(id);
 
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self, session))]
+    async fn tcpip_forward(
+        &mut self,
+        address: &str,
+        port: &mut u32,
+        session: &mut server::Session,
+    ) -> Result<bool, Self::Error> {
+        tracing::info!("egress-tunnel");
+
+        if !self.enabled(&Features::EgressTunnel) {
+            return Ok(false);
+        }
+
+        let State::Authenticated(identity) = &self.state else {
+            UNEXPECTED_STATE
+                .with_label_values(&["ChannelOpen", self.state.as_ref()])
+                .inc();
+            return Err(eyre!("Unexpected state: {:?}", self.state));
+        };
+
+        let handle = session.handle();
+        let writers = self.writers.clone();
+        #[allow(clippy::cast_possible_truncation)]
+        let mut egress = Egress::new(
+            identity,
+            self.controller.current_pod(),
+            address,
+            *port as u16,
+        )?;
+        let client = identity.client(&self.controller)?;
+
+        self.tasks.spawn(async move {
+            match egress.run(client, handle).await {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    let e = e.wrap_err("reverse tunnel failed");
+
+                    let writers = writers.lock().await;
+
+                    for (_, writer) in writers.iter() {
+                        writer.send(Event::Error(format!("Error:{e:?}")))?;
+                    }
+
+                    Err(e)
+                }
+            }
+        });
+
+        Ok(true)
     }
 }
 

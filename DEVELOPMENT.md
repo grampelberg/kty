@@ -42,7 +42,7 @@ be available to run inside the cluster.
 
 [k3d]: https://k3d.io/v5.6.3/#releases
 
-## Forwarding
+## Ingress Tunnel
 
 If testing port forwarding and running the service locally (aka not on the
 cluster), you won't have access to any of the DNS or IP addresses that might be
@@ -60,3 +60,14 @@ ssh -L 9090:svc/default/localhost:9091 me@localhost -p 2222
 
 Testing `pods` and `nodes` requires running on the cluster as the response from
 `addr` for those is IP addresses.
+
+## Egress Tunnel
+
+If you're not running on the cluster, you'll want to:
+
+- Make sure you're running from the same network (doable with some games with
+  VPNs and local clusters).
+- Set `HOSTNAME` to a pod in the cluster that is in your default namespace.
+- Set `POD_UID` to the `metadata.uid` of the pod from `HOSTNAME`.
+- Set `POD_IP` to the IP address of your host. You can get this by going into a
+  pod and doing a `nslookup host.docker.internal`.

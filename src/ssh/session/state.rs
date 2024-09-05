@@ -15,20 +15,12 @@ pub enum State {
     // states that get moved between, it feels like this should stop at authenticated and then let
     // each individual request track its own state. This'll require some extra work on the channel
     // side of things.
-    Authenticated(DebugClient, String),
+    Authenticated(Identity),
 }
 
-pub struct DebugClient(pub kube::Client);
-
-impl std::fmt::Debug for DebugClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "kube::Client")
-    }
-}
-
-impl AsRef<kube::Client> for DebugClient {
-    fn as_ref(&self) -> &kube::Client {
-        &self.0
+impl Default for State {
+    fn default() -> Self {
+        Self::Unauthenticated
     }
 }
 
@@ -73,7 +65,7 @@ impl State {
         *self = State::InvalidIdentity(identity, key);
     }
 
-    pub fn authenticated(&mut self, client: kube::Client, method: String) {
-        *self = State::Authenticated(DebugClient(client), method);
+    pub fn authenticated(&mut self, identity: Identity) {
+        *self = State::Authenticated(identity);
     }
 }

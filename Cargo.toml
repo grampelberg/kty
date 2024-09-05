@@ -46,6 +46,7 @@ jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
 kube = { version = "0.93.1", features = ["derive", "runtime", "ws"] }
 lazy_static = "1.5.0"
+local-ip-address = "0.6.2"
 mio = "1.0.2"
 pkcs8 = "0.10.2"
 prometheus = "0.13.4"
@@ -67,6 +68,7 @@ serde_json = "1.0.127"
 serde_path_to_error = "0.1.16"
 serde_yaml = "0.9.34"
 ssh-key = "0.6.6"
+strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 syntect = "5.2.0"
 syntect-tui = "3.0.3"
