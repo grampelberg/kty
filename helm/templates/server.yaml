@@ -90,16 +90,16 @@ spec:
             - --address=0.0.0.0
             - --key=/etc/kuberift/key/id_ed25519
 
-          {{- with .openid -}}
           env:
-            - name: KUBERIFT_CLIENT_ID
-              value: {{ .clientID }}
-            - name: KUBERIFT_OID_CONFIG_URL
-              value: {{ .configURL }}
             - name: POD_UID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+          {{- with .openid -}}
+            - name: KUBERIFT_CLIENT_ID
+              value: {{ .clientID }}
+            - name: KUBERIFT_OID_CONFIG_URL
+              value: {{ .configURL }}
           {{- end }}
 
           {{- if .resources}}

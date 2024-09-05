@@ -17,6 +17,21 @@ You can:
 
 ![demo](./assets/demo.gif)
 
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Auth][auth] - Deep dive on what's happening around auth and what the minimum
+  permissions are for each piece of functionality.
+- [Deployment](docs/deployment.md) - Figure out how to get running on your own
+  cluster.
+- [Development](DEVELOPMENT.md) - Some tips and tricks for doing development on
+  kuberift itself.
+- [Metrics](docs/metrics.md) - List of the possible metrics exported via.
+  prometheus.
+- [TODO](TODO.md) - A selection of outstanding functionality.
+
+[auth]: docs/auth.md
+
 ## Getting Started
 
 1. Download the [cli][cli-download] and add it to your `$PATH`.
@@ -61,6 +76,11 @@ From this point, here's a few suggestions for things to check out:
   ```bash
   scp -P 2222 me@localhost:/default/my-pod/etc/hosts /tmp
   ```
+
+- Use your own [OpenID provider](docs/deployment.md#bring-your-own-provider).
+
+Note: you'll want to install on-cluster to use the tunnelling functionality.
+Check out the [helm](docs/deployment.md#helm) docs for a quick way to do that.
 
 [cli-download]: https://github.com/grampelberg/kuberift/releases
 [k3d]: https://k3d.io
@@ -143,18 +163,3 @@ render the file tree natively for you.
 
 - See releases for the latest tagged release.
 - The `unstable` tag is updated on every merge to main.
-
-## Documentation
-
-- [Architecture](docs/architecture.md)
-- [Auth][auth] - Deep dive on what's happening around auth and what the minimum
-  permissions are for each piece of functionality.
-- [Deployment](docs/deployment.md) - Figure out how to get running on your own
-  cluster.
-- [Development](DEVELOPMENT.md) - Some tips and tricks for doing development on
-  kuberift itself.
-- [Metrics](docs/metrics.md) - List of the possible metrics exported via.
-  prometheus.
-- [TODO](TODO.md) - A selection of outstanding functionality.
-
-[auth]: docs/auth.md

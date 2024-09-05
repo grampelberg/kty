@@ -51,8 +51,6 @@
 ## SSH Functionality
 
 - Allow `ssh` directly into a pod without starting the dashboard.
-- Enable `ssh -L` for forwarding requests _into_ a pod.
-- Enable `ssh -R` for forwarding a remote service _into_ a localhost.
 
 ## Ingress Tunnel
 
