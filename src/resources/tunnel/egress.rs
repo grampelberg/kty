@@ -112,6 +112,11 @@ impl Egress {
             .expect("current pod has an IP address");
         let address_type = if addr.is_ipv4() { "IPv4" } else { "IPv6" };
 
+        // Owner references cannot be cross-namespace. Because the server will run in
+        // namespace X and the services can be in namespace Y, this results in the
+        // EndpointSlice being immediately deleted. It would be nice to have some kind
+        // of garbage collection tied to the pod itself - but that might need to be a
+        // startup process.
         let mut metadata = self.metadata.clone();
         metadata.labels.get_or_insert(BTreeMap::new()).extend([
             (
@@ -120,10 +125,6 @@ impl Egress {
             ),
             ("kubernetes.io/service-name".to_string(), self.name_any()),
         ]);
-        metadata
-            .owner_references
-            .get_or_insert(Vec::new())
-            .push(self.current_pod.owner_ref(&()).expect("pods can be owners"));
 
         #[allow(clippy::cast_lossless)]
         let endpoint = EndpointSlice {

@@ -54,11 +54,24 @@
 
 ## Ingress Tunnel
 
+- Add an information banner for tunnels that have been requested and are active.
+
 ## Egress Tunnel
 
+- Add an information banner for tunnels that have been requested and are active.
+- Keep the task running even if the first connect fails - need to be able to
+  retry it without restarting the session.
 - Display error for when the `tcpip_forward` address is `localhost`.
 - Need some way to do cleanup and lifecycle management of endpoints and
   services.
+- Cleanup services/endpoints on:
+  - Shutdown - especially termination of the channel.
+  - Startup - because we can't do cross-namespace owner references, anything
+    created that doesn't have an active pod should be removed (via `targetRef`
+    on the `endpointSlice`).
+- Test what happens when a service is replaced. It looks like the endpointslice
+  sticks around but it is unclear if the separate endpointslice's endpoints are
+  used or not.
 
 ## Build
 
