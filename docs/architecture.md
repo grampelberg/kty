@@ -1,5 +1,191 @@
 # Architecture
 
+Kuberift is a standalone SSH server which provides much of the standard SSH
+functionality as if a Kubernetes cluster was a single host. This allows for
+`ssh me@my-cluster` to provide a shell in a running pod, tunneling between
+resources without a VPN and copying files from the cluster. By leveraging OpenID
+and RBAC, you can provide access to your clusters from anywhere using `ssh`, a
+tool that comes included in almost every environment out there.
+
+Similar to normal SSH servers, it delegates authentication and authorization to
+other methods. In particular, identity is verified via. OpenID providers or SSH
+public keys that have been added as custom resources to the cluster. It is
+possible to [bring your own provider](deployment.md#bring-your-own-provider) but
+there is a default one provided that allows for Github and Google authentication
+out of the box.
+
+Once authenticated, each user's session has a Kubernetes client attached to it
+that impersonates the user - in fact, the server itself has almost no
+permissions itself. Based on the user's permissions granted with RBAC, the
+server acts on the user's behalf based on what the SSH session is telling it to
+do. This is effectively the same thing that `kubectl` does with authentication
+plugins, just without the plugin or `kubectl` binary involved.
+
+## How it works
+
+### Shell Access
+
+After a session has been established, the SSH client can issue a [pty
+request][pty]. To do this:
+
+1. The client requests a new channel.
+1. The `PTY` request is sent to the server.
+1. A k8s client is created that impersonates the user.
+1. An IO loop and UI loop are started as background tasks.
+1. The user receives a TUI dashboard that is interpreting the k8s client's
+   output.
+
+Note: log streaming works similarly here. A stream is setup and gets added to a
+buffer on each loop of the renderer.
+
+Once the dashboard has been started up, a user can go to the `Shell` tab. This:
+
+1. Issues a `pod/exec` request in the client.
+1. Pauses drawing the UI in the state that it was at.
+1. Switches the UI to `raw` mode. Instead of drawing the UI, it streams directly
+   from the pod's `exec` input/output.
+1. On destruction of the stream, it resumes drawing the UI.
+
+Client functionality used:
+
+- A [Reflector][reflector] to list pods and get all the state there.
+- `pod/logs` to stream logs from the pod
+- `pod/exec` to exec `/bin/bash` in a container and return a shell. This also
+  uses the `tty` functionality there to allow for direct access instead of a
+  simple stream.
+
+[pty]: https://datatracker.ietf.org/doc/html/rfc4254#section-6.2
+[reflector]: https://github.com/kube-rs/kube?tab=readme-ov-file#reflectors
+
+### Ingress Tunneling
+
+Once a session has been established:
+
+1. The client starts listening to the configured port on localhost.
+1. When a new connection to that port is received, it opens a
+   [`direct-tcpip`][direct-tcpip] channel to the server.
+1. The incoming hostname is mapped from a k8s resource string
+   (`<resource>/<namespace>/<name>`) to something that can be connected to. In
+   the case of nodes and pods, this is the IP address associated with the
+   resource itself. For services, this is the service's DNS name itself.
+1. A connection from the server to the resource is established.
+1. A background task is started that copies data between the client's channel
+   and the stream between the server and resource.
+1. When EOF is sent on _either_ the source stream or the destination stream, the
+   background task is canceled and the channel is closed.
+
+Notes:
+
+- The client creates a new channel on each incoming TCP connection.
+- Usually, a client sends a PTY request _and then_ asks for new tcpip channels.
+  Because of this behavior, we show tunnel status in the dashboard. It also
+  report errors on a per-session basis.
+- The server assumes that it has access to the requested resources. If not, the
+  connection will fail and the user will receive an error.
+- This does _not_ use `pod/port-forward` like `kubectl` does. It proxies
+  directly from the server to the resource.
+- This does _not_ rely on `proxy` support in the API server. That is restricted
+  to HTTP/HTTPS and doesn't allow raw TCP.
+
+Client functionality used:
+
+- `get` for the resource in question (node, pod).
+
+[direct-tcpip]: https://datatracker.ietf.org/doc/html/rfc4254#section-7.2
+
+### Egress Tunneling
+
+Once a session has been established:
+
+1. The client issues a [tcpip-forward][tcpip-forward] request.
+1. The client optionally sends a `pty` request.
+1. A backgroudn task is started that listens on a random port on the server.
+1. The service in the connection string (`-R default/foo:8080:localhost:8080`)
+   is patched (or created) so that it has no selector.
+1. An [EndpointSlice][endpoint-slice] is created with:
+   - An address pointing at the server's IP address. This comes from
+     [local-ip-address][local-ip-address] when run within a cluster and via.
+     `serve` config otherwise.
+   - A `TargetRef` that is the server. On cluster, this is built from the
+     kubeconfig's default namespace and the hostname of the pod.
+1. Incoming connections open a [forwarded-tcpip][direct-tcpip] channel to the
+   client.
+1. A background task is started that copies data between the source (something
+   on the cluster) and the destination (the localhost).
+1. When EOF is sent on _either_ the source stream or the destination stream, the
+   background task is canceled and the SSH channel is closed. This does not
+   terminate the session - that is still running and could be handling other
+   things.
+
+Notes:
+
+- There's a new channel created to the client on every incoming connection for
+  the cluster. This works because SSH sessions are assumed to be multiplexed and
+  bidirectional.
+- The service is patched, the assumption is that the user issuing the request
+  can override the service if desired. It is entirely possible, however, that an
+  important service is overwritten.
+- The service and endpoint created are not garbage collected. OwnerReferences
+  are not cross-namespace, so it becomes difficult to know what is unused and
+  what isn't.
+
+Client functionality used:
+
+- `patch` for services and endpoints.
+
+[tcpip-forward]: https://datatracker.ietf.org/doc/html/rfc4254#section-7.1
+[endpoint-slice]:
+  https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/
+[local-ip-address]: https://crates.io/crates/local-ip-address
+
+### SCP / SFTP
+
+Once a session has been established:
+
+1. The client requests a new channel.
+1. A [subsystem][subsystem] request for `sftp` is issued.
+1. The channel is handed off to a background task which handles the [sftp][sftp]
+   protocol.
+
+At this point, what happens depends on the incoming request. For a simple
+`scp me@my-cluster:/default/foo/bar/etc/hosts /tmp/hosts`:
+
+- An [fstat][fstat] request is sent to verify that the file exists.
+- The `default` namespace is fetched.
+- The `foo` pod is fetched.
+- The `bar` container is verified to exist.
+- A `pod/exec` is started in the `default/foo` pod for the `bar` container that
+  does `ls -l /etc/hosts`.
+- The result of this is parsed into something that can be sent back to the
+  client.
+- The client issues an `open` request.
+- The client issues a `read` request.
+- Another `pod/exec` is started, this time with `cat /etc/hosts`. The content of
+  this is streamed back to the client.
+- The client finally issues a `close` request and an EOF.
+- The server closes the connection.
+
+In addition to `stat` and `read` requests, SFTP allows for browsing entire file
+trees. This is handled at the namespace/pod level via `list` requests for those
+resources (eg `list` namespaces for the root). Inside the container, `pdo/exec`
+and `ls` is used again on a per-directory basis.
+
+Notes:
+
+- This seems a little ridiculous, and it is. This is almost how `kubectl cp`
+  works! Instead of `ls` and `cat` it uses `tar` and hopes that it works.
+
+Client functionality used:
+
+- `list` for namespaces and pods.
+- `get` for namespaces and pods.
+- `pod/exec` for files inside the container.
+
+[subsystem]: https://datatracker.ietf.org/doc/html/rfc4254#section-6.5
+[sftp]: https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02
+[fstat]:
+  https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.8
+
 ## Design Decisions
 
 - Instead of having a separate `User` CRD to track the user, we rely on k8s'
