@@ -2,11 +2,41 @@
 
 Kuberift utilizes external systems for both authn and authz. To fetch your
 identity, a combo of OpenID and the `keys` resource in your cluster are used.
-These map from something external to a `User` and `Group` inside of k8s.
+These map from something external (an oauth identity token or a public key hash)
+to a `User` and `Group` inside of k8s.
 
-Once an identity has been established, k8s' RBAC system is used to verify what a
-user can do on the cluster. This is implemented by keeping kuberift's
-permissions to a minimum and impersonating the verified identities.
+Similar to authentication, Kuberift does not do authorization itself. Instead,
+it [impersonates][impersonate] the authenticated user. Any action that is taken
+from that point forward uses the users' permissions as granted via. RBAC in k8s.
+
+[impersonate]:
+  https://kubernetes.io/docs/reference/access-authn-authz/authentication/#user-impersonation
+
+## Flow
+
+```mermaid
+flowchart TD
+    subgraph start [" "]
+    conn[ ] --> Authentication
+    end
+    subgraph Authentication
+    IsKey{Public key registered?} --> |Yes| Authn
+    IsKey --> |No| SendCode
+    SendCode[Provide OpenID Link] --> CheckCode
+    CheckCode{Got Oauth Token?} --> |Valid| Authn
+    CheckCode --> |Invalid| SendCode
+    Authn[Identity authenticated]
+    end
+    subgraph Authorization
+    Impersonate[Impersonate user] --> CheckAuthz
+    CheckAuthz{Can list pods?} --> |Yes| Authz
+    CheckAuthz --> |No| Authentication
+    Authz[User authorized with kubernetes]
+    end
+    Authentication --> Authorization
+    style start fill:none,stroke:none
+    style conn fill:none,stroke:none
+```
 
 ## Identity (Authentication)
 
