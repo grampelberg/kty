@@ -42,6 +42,14 @@ be available to run inside the cluster.
 
 [k3d]: https://k3d.io/v5.6.3/#releases
 
+## Logging
+
+The global debug level can be overly noisy. Instead of doing `-vvvv`, try:
+
+```bash
+RUST_LOG=none,kuberift=debug
+```
+
 ## Ingress Tunnel
 
 If testing port forwarding and running the service locally (aka not on the

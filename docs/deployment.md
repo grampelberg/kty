@@ -51,6 +51,10 @@ using helm, there are some things to be aware of:
   using the [gateway api][gateway-api] or configuring your ingress controller to
   route TCP.
 
+Note: if you're debugging something, instead of setting global verbosity with
+`-vv`, use `RUST_LOG=none,kuberift=debug`. That'll keep other crates that are
+especially noisy out of the output.
+
 ### Helm
 
 There is a provided `getting-started.yaml` set of values. To install this on

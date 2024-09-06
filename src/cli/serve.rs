@@ -112,7 +112,7 @@ impl Serve {
         };
 
         let ctrl = ControllerBuilder::default()
-            .current(
+            .server(
                 CurrentPodBuilder::default()
                     .namespace(cfg.default_namespace.clone())
                     .name(self.pod_name.clone())

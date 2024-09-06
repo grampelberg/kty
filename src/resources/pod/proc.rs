@@ -3,8 +3,10 @@ use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, AttachParams};
 use tokio::io::AsyncReadExt;
 
-use super::{StatusError, StatusExt};
-use crate::resources::container::{Container, ContainerExt};
+use crate::resources::{
+    container::{Container, ContainerExt},
+    status::StatusExt,
+};
 
 pub struct Proc {
     container: Container,
@@ -47,7 +49,7 @@ impl Proc {
 
         if let Some(status) = status.await {
             if !status.is_success() {
-                return Err(eyre!(StatusError::new(status)));
+                return Err(status.into_report());
             }
         }
 

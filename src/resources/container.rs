@@ -197,15 +197,15 @@ impl ContainerExt for Container {
 }
 
 impl<'a> TableRow<'a> for Container {
-    fn header() -> Row<'a> {
-        Row::new(vec![
+    fn header() -> Option<Row<'a>> {
+        Some(Row::new(vec![
             Cell::from("Name"),
             Cell::from("Image"),
             Cell::from("Ready"),
             Cell::from("State"),
             Cell::from("Restarts"),
             Cell::from("Age"),
-        ])
+        ]))
     }
 
     fn constraints() -> Vec<Constraint> {

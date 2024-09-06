@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::Widget;
-use crate::events::{Broadcast, Event, Keypress};
+use crate::events::{Broadcast, Event, Keypress, StringError};
 
 #[derive(Default)]
 pub struct Error {
@@ -20,17 +20,18 @@ pub struct Error {
 
 impl From<Report> for Error {
     fn from(err: Report) -> Self {
-        Self {
-            msg: format!("Error:{err:?}"),
-            ..Default::default()
-        }
+        let Some(err) = err.downcast_ref::<StringError>() else {
+            return format!("{err:?}").into();
+        };
+
+        err.to_string().into()
     }
 }
 
 impl From<String> for Error {
     fn from(msg: String) -> Self {
         Self {
-            msg,
+            msg: format!("Error:{msg}"),
             ..Default::default()
         }
     }

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use derive_builder::Builder;
 use eyre::{eyre, Result};
 use k8s_openapi::{
     api::{
@@ -15,44 +16,76 @@ use kube::{
 use russh::server;
 use tokio::{net::TcpListener, task::JoinSet};
 
-use super::{stream, StreamMetrics};
+use super::{stream, StreamMetrics, Tunnel};
 use crate::{
+    broadcast::Broadcast,
+    events::Event,
     identity::Identity,
-    resources::{pod::PodExt, MANAGER},
+    resources::{pod::PodExt, tunnel, MANAGER},
 };
 
 static HOST_LABEL: &str = "egress.kuberift.com/host";
 static IDENTITY_LABEL: &str = "egress.kuberift.com/identity";
 
+#[derive(Builder)]
+#[builder(pattern = "owned")]
 pub struct Egress {
+    #[builder(default)]
     metadata: ObjectMeta,
+    user: String,
     port: u16,
+    #[builder(default)]
     tasks: JoinSet<Result<()>>,
-    current_pod: Pod,
+    #[builder(setter(custom))]
+    server: Pod,
+    broadcast: Broadcast,
+    meta: Tunnel,
 }
 
-impl Egress {
-    pub fn new(identity: &Identity, current_pod: Pod, service: &str, port: u16) -> Result<Self> {
+impl std::fmt::Display for Egress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Host[{}:{}] User[{}]", self.path(), self.port, self.user)
+    }
+}
+
+impl EgressBuilder {
+    pub fn host(mut self, service: &str) -> Result<Self> {
         let (ns, name) = service
             .split_once('/')
             .ok_or_else(|| eyre!("format is <namespace>/<name>"))?;
 
-        Ok(Self {
-            metadata: ObjectMeta {
-                name: Some(name.into()),
-                namespace: Some(ns.into()),
-                annotations: Some(BTreeMap::from([
-                    (HOST_LABEL.to_string(), current_pod.name_any()),
-                    (IDENTITY_LABEL.to_string(), identity.name.clone()),
-                ])),
-                ..Default::default()
-            },
-            port,
-            tasks: JoinSet::new(),
-            current_pod,
-        })
+        let meta = self.metadata.get_or_insert(ObjectMeta::default());
+        meta.name = Some(name.into());
+        meta.namespace = Some(ns.into());
+
+        Ok(self)
     }
 
+    pub fn annotation(mut self, key: String, value: String) -> Self {
+        self.metadata
+            .get_or_insert(ObjectMeta::default())
+            .annotations
+            .get_or_insert_with(BTreeMap::new)
+            .insert(key, value);
+
+        self
+    }
+
+    pub fn identity(self, identity: &Identity) -> Self {
+        self.user(identity.name.clone())
+            .annotation(IDENTITY_LABEL.to_string(), identity.name.clone())
+    }
+
+    pub fn server(self, pod: Pod) -> Self {
+        let mut this = self.annotation(HOST_LABEL.to_string(), pod.name_any());
+
+        this.server = Some(pod);
+
+        this
+    }
+}
+
+impl Egress {
     fn namespace(&self) -> Option<String> {
         self.metadata.namespace.clone()
     }
@@ -106,10 +139,7 @@ impl Egress {
     }
 
     async fn endpoint(&self, client: kube::Client, local_port: u16) -> Result<EndpointSlice> {
-        let addr = self
-            .current_pod
-            .ip()
-            .expect("current pod has an IP address");
+        let addr = self.server.ip().expect("current pod has an IP address");
         let address_type = if addr.is_ipv4() { "IPv4" } else { "IPv6" };
 
         // Owner references cannot be cross-namespace. Because the server will run in
@@ -132,7 +162,7 @@ impl Egress {
             address_type: address_type.to_string(),
             endpoints: vec![Endpoint {
                 addresses: vec![addr.to_string()],
-                target_ref: Some(self.current_pod.object_ref(&())),
+                target_ref: Some(self.server.object_ref(&())),
                 conditions: Some(EndpointConditions {
                     ready: Some(true),
                     serving: Some(true),
@@ -181,24 +211,58 @@ impl Egress {
         loop {
             let (socket, addr) = listener.accept().await?;
             let handle = handle.clone();
-            let mut channel = handle
+            let channel = match handle
                 .channel_open_forwarded_tcpip(
                     self.path(),
                     u32::from(self.port),
                     addr.ip().to_string(),
                     u32::from(addr.port()),
                 )
-                .await?;
+                .await
+            {
+                Ok(channel) => channel,
+                Err(e) => {
+                    let e = if let russh::Error::ChannelOpenFailure(err) = e {
+                        eyre!("are you listening on the configured local port?")
+                            .wrap_err(format!("failed to open channel to localhost: {err:?}"))
+                            .wrap_err("reverse tunnel failed")
+                    } else {
+                        e.into()
+                    };
+
+                    self.broadcast
+                        .all(Event::Tunnel(Err(tunnel::Error::new(
+                            &e,
+                            self.meta.clone(),
+                        ))))
+                        .await?;
+
+                    continue;
+                }
+            };
+
             let id = channel.id();
+            let connection_string = self.to_string();
+
+            self.broadcast
+                .all(Event::Tunnel(Ok(self.meta.clone().into_active())))
+                .await?;
+
+            if let Some(result) = self.tasks.try_join_next() {
+                // The error from this should have already been broadcast.
+                let _unused = result?;
+            }
+
+            let num_tasks = self.tasks.len();
+            let broadcast = self.broadcast.clone();
+            let meta = self.meta.clone();
 
             self.tasks.spawn(async move {
-                let (src_read, src_write) = socket.into_split();
-                let dst_write = channel.make_writer();
-                let dst_read = channel.make_reader();
+                tracing::debug!(egress = connection_string, "outgoing connection opened");
 
                 let result = stream(
-                    (src_read, src_write),
-                    (dst_read, dst_write),
+                    channel.into_stream(),
+                    socket,
                     StreamMetrics {
                         resource: "service",
                         direction: "egress",
@@ -210,6 +274,21 @@ impl Egress {
                     .close(id)
                     .await
                     .map_err(|()| eyre!("failed to close channel {id}"))?;
+
+                tracing::debug!(egress = connection_string, "outgoing connection closed");
+
+                if let Err(e) = &result {
+                    broadcast
+                        .all(Event::Tunnel(Err(tunnel::Error::new(
+                            e,
+                            meta.clone().into_error(),
+                        ))))
+                        .await?;
+                } else if num_tasks == 0 {
+                    broadcast
+                        .all(Event::Tunnel(Ok(meta.into_listening())))
+                        .await?;
+                }
 
                 result
             });

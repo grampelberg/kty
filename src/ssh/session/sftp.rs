@@ -120,7 +120,7 @@ impl server::Handler for Handler {
 
         self.state = State::FileComplete;
 
-        tracing::info!("read file");
+        tracing::debug!("read");
 
         let result = File::new(Path::new(handle.as_str()))
             .read(self.client.clone())
@@ -152,7 +152,7 @@ impl server::Handler for Handler {
         _offset: u64,
         _data: Vec<u8>,
     ) -> Result<Status, Self::Error> {
-        tracing::info!("write");
+        tracing::debug!("write");
 
         Err(StatusCode::OpUnsupported)
     }
@@ -166,7 +166,7 @@ impl server::Handler for Handler {
     #[tracing::instrument(skip(self))]
     async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
         SFTP_LIST.inc();
-        tracing::info!("readdir");
+        tracing::debug!("readdir");
 
         if !matches!(self.state, State::OpenDir) {
             return Err(StatusCode::Eof);
@@ -181,7 +181,7 @@ impl server::Handler for Handler {
             .await
             .map(|files| Name { id, files })
             .map_err(|e| {
-                tracing::error!("readdir: {:?}", e);
+                tracing::debug!("readdir: {:?}", e);
                 StatusCode::NoSuchFile
             })
     }
@@ -197,16 +197,17 @@ impl server::Handler for Handler {
         })
     }
 
+    #[tracing::instrument(skip(self))]
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
         SFTP_STAT.inc();
-        tracing::info!("stat: {}", path);
+        tracing::debug!("stat");
 
         File::new(Path::new(path.as_str()))
             .stat(self.client.clone())
             .await
             .map(|attrs| Attrs { id, attrs })
             .map_err(|e| {
-                tracing::error!("stat: {:?}", e);
+                tracing::debug!("stat: {:?}", e);
                 StatusCode::NoSuchFile
             })
     }
@@ -215,7 +216,6 @@ impl server::Handler for Handler {
         self.stat(id, path).await
     }
 
-    #[tracing::instrument(skip(self))]
     async fn fstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
         self.stat(id, path).await
     }

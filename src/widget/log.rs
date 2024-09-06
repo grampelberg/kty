@@ -177,6 +177,7 @@ impl Drop for Log {
     }
 }
 
+#[tracing::instrument(skip(client, pod, tx, params))]
 fn log_stream<'a>(
     client: kube::Client,
     pod: Arc<Pod>,
@@ -210,7 +211,7 @@ fn log_stream<'a>(
             tx.send(line)?;
         }
 
-        tracing::info!("stream ended");
+        tracing::debug!(pod = pod.name_any(), "stream ended");
 
         Ok(())
     }

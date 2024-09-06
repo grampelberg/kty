@@ -78,7 +78,7 @@ pub struct Controller {
     #[builder(default)]
     reporter: Option<Reporter>,
     #[builder(default)]
-    current: CurrentPod,
+    server: CurrentPod,
 }
 
 impl Controller {
@@ -109,8 +109,8 @@ impl Controller {
         Ok(())
     }
 
-    pub fn current_pod(&self) -> Pod {
-        self.current.clone().into()
+    pub fn server(&self) -> Pod {
+        self.server.clone().into()
     }
 }
 

@@ -2,6 +2,7 @@ pub mod age;
 pub mod container;
 pub mod file;
 pub mod pod;
+pub mod status;
 pub mod store;
 pub mod tunnel;
 
@@ -18,7 +19,7 @@ use kube::{
 };
 use regex::Regex;
 use serde::Serialize;
-use tracing::info;
+pub use tunnel::Tunnel;
 
 use crate::identity;
 
@@ -32,11 +33,11 @@ pub(crate) async fn create(
     client: &Api<CustomResourceDefinition>,
     update: bool,
 ) -> Result<Vec<CustomResourceDefinition>> {
-    info!(update = update, "updating CRD definitions...");
+    tracing::info!(update = update, "updating CRD definitions...");
 
     let results: Vec<_> = futures::stream::iter(all())
         .map(|resource| async move {
-            info!("creating/updating CRD: {}", resource.name_any());
+            tracing::info!("creating/updating CRD: {}", resource.name_any());
 
             if update {
                 client

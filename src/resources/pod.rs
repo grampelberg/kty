@@ -1,14 +1,11 @@
 pub mod proc;
 
-use std::{borrow::Borrow, cmp::Ordering, error::Error, fmt::Display, net::IpAddr, sync::Arc};
+use std::{borrow::Borrow, cmp::Ordering, net::IpAddr, sync::Arc};
 
 use chrono::{TimeDelta, Utc};
-use k8s_openapi::{
-    api::core::v1::{
-        ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
-        PodStatus,
-    },
-    apimachinery::pkg::apis::meta::v1,
+use k8s_openapi::api::core::v1::{
+    ContainerState, ContainerStateTerminated, ContainerStateWaiting, ContainerStatus, Pod,
+    PodStatus,
 };
 use kube::ResourceExt;
 pub use proc::Proc;
@@ -26,43 +23,6 @@ use crate::widget::{
     table::{Content, RowStyle},
     TableRow,
 };
-
-// TODO: There's probably a better debug implementation than this.
-#[derive(Clone, Debug)]
-pub struct StatusError {
-    pub message: String,
-}
-
-// Because this is a golang error that's being returned, there's really no good
-// way to convert this into something that is moderately usable. The rest of the
-// `Status` struct is empty of anything useful. The decision is to be naive here
-// and let other display handlers figure out if they would like to deal with the
-// message.
-impl StatusError {
-    pub fn new(inner: v1::Status) -> Self {
-        Self {
-            message: inner.message.unwrap_or("unknown status".to_string()),
-        }
-    }
-}
-
-impl Error for StatusError {}
-
-impl Display for StatusError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-pub trait StatusExt {
-    fn is_success(&self) -> bool;
-}
-
-impl StatusExt for v1::Status {
-    fn is_success(&self) -> bool {
-        self.status == Some("Success".to_string())
-    }
-}
 
 pub enum Phase {
     Pending,
@@ -268,15 +228,15 @@ impl PodExt for Pod {
 }
 
 impl<'a> TableRow<'a> for Arc<Pod> {
-    fn header() -> Row<'a> {
-        Row::new(vec![
+    fn header() -> Option<Row<'a>> {
+        Some(Row::new(vec![
             Cell::from("Namespace"),
             Cell::from("Name"),
             Cell::from("Ready"),
             Cell::from("Status"),
             Cell::from("Restarts"),
             Cell::from("Age"),
-        ])
+        ]))
     }
 
     fn constraints() -> Vec<Constraint> {

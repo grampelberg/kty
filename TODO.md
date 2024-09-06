@@ -54,16 +54,8 @@
 
 ## Ingress Tunnel
 
-- Add an information banner for tunnels that have been requested and are active.
-
 ## Egress Tunnel
 
-- Add an information banner for tunnels that have been requested and are active.
-- Keep the task running even if the first connect fails - need to be able to
-  retry it without restarting the session.
-- Display error for when the `tcpip_forward` address is `localhost`.
-- Need some way to do cleanup and lifecycle management of endpoints and
-  services.
 - Cleanup services/endpoints on:
   - Shutdown - especially termination of the channel.
   - Startup - because we can't do cross-namespace owner references, anything
