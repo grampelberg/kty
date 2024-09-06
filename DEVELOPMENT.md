@@ -2,11 +2,21 @@
 
 ## Commits
 
-We try to use [conventional commits][conventional commits]. This allows
-[git-cliff][git-cliff] to construct a chagelog on release.
+- All commits must be signed to merge into `main`.
+- We try to use [conventional commits][conventional commits]. This allows
+  [git-cliff][git-cliff] to construct a chagelog on release.
 
 [conventional commits]: https://www.conventionalcommits.org/en/v1.0.0/
 [git-cliff]: https://git-cliff.org
+
+## PRs
+
+Because github doesn't have great support for merging PRs from the webui, PRs
+must be merged from the command line:
+
+```bash
+git rebase -ff branch-name && git push origin branch-name
+```
 
 ## CI
 
