@@ -69,8 +69,6 @@ impl AsyncRead for Stdin {
 
             let n = std::io::stdin().read(buf.initialize_unfilled())?;
             buf.advance(n);
-
-            tracing::info!("buf: {:?}", buf.filled());
         }
 
         if !buf.filled().is_empty() {

@@ -1,3 +1,4 @@
+mod metrics;
 mod sftp;
 mod state;
 
@@ -7,12 +8,10 @@ use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use eyre::{eyre, Report, Result};
 use fast_qr::QRBuilder;
-use lazy_static::lazy_static;
-use prometheus::{
-    histogram_opts, opts, register_histogram, register_int_counter, register_int_counter_vec,
-    register_int_gauge, Histogram, IntCounter, IntCounterVec, IntGauge,
+use metrics::{
+    ACTIVE_SESSIONS, AUTH_ATTEMPTS, AUTH_RESULTS, AUTH_SUCEEDED, CHANNELS, CODE_CHECKED,
+    CODE_GENERATED, REQUESTS, SESSION_DURATION, TOTAL_BYTES, TOTAL_SESSIONS, UNEXPECTED_STATE,
 };
-use prometheus_static_metric::make_static_metric;
 use ratatui::{backend::WindowSize, layout::Size};
 use russh::{
     keys::key::PublicKey,
@@ -20,147 +19,20 @@ use russh::{
     ChannelId, Disconnect, MethodSet,
 };
 use state::State;
-use tokio::{
-    sync::{mpsc::UnboundedSender, Mutex},
-    task::JoinSet,
-};
+use tokio::task::JoinSet;
 use tracing::debug;
 
 use super::Features;
 use crate::{
+    broadcast::Broadcast,
     dashboard::Dashboard,
     events::Event,
     identity::Key,
     io::Channel,
     openid,
-    resources::tunnel::{Egress, Ingress},
+    resources::tunnel::{self, EgressBuilder, Ingress, Tunnel, TunnelBuilder},
     ssh::{Authenticate, Controller},
 };
-
-make_static_metric! {
-    pub struct MethodVec: IntCounter {
-        "method" => {
-            publickey,
-            interactive,
-        }
-    }
-    pub struct ResultVec: IntCounter {
-        "method" => {
-            publickey,
-            interactive,
-        },
-        "result" => {
-            accept,
-            partial,
-            reject,
-        }
-    }
-    pub struct CodeVec: IntCounter {
-        "result" => {
-            valid,
-            invalid,
-        }
-    }
-    pub struct RequestVec: IntCounter {
-        "method" => {
-            pty,
-            sftp,
-            window_resize,
-        }
-    }
-    pub struct ChannelVec: IntCounter {
-        "method" => {
-            open_session,
-            close,
-            eof,
-            direct_tcpip,
-            forwarded_tcpip,
-        }
-    }
-}
-
-lazy_static! {
-    static ref TOTAL_BYTES: IntCounter =
-        register_int_counter!("bytes_received_total", "Total number of bytes received").unwrap();
-    static ref TOTAL_SESSIONS: IntCounter =
-        register_int_counter!("session_total", "Total number of sessions").unwrap();
-    static ref ACTIVE_SESSIONS: IntGauge =
-        register_int_gauge!("active_sessions", "Number of active sessions").unwrap();
-    static ref SESSION_DURATION: Histogram = register_histogram!(histogram_opts!(
-        "session_duration_minutes",
-        "Session duration",
-        vec!(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0),
-    ))
-    .unwrap();
-    static ref UNEXPECTED_STATE: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "unexpected_state_total",
-            "Number of times an unexpected state was encountered",
-        ),
-        &["expected", "actual"],
-    )
-    .unwrap();
-}
-
-lazy_static! {
-    static ref AUTH_ATTEMPTS_VEC: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "auth_attempts_total",
-            "Number of authentication attempts. Note that this can seem inflated because \
-             `publickey` will always be attempted first and `keyboard` will happen at least twice \
-             for every success."
-        ),
-        &["method"]
-    )
-    .unwrap();
-    static ref AUTH_ATTEMPTS: MethodVec = MethodVec::from(&AUTH_ATTEMPTS_VEC);
-    static ref AUTH_RESULTS_VEC: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "auth_results_total",
-            "Counter for the results of authentication attempts. Note that this can seem inflated \
-             because `publickey` is always attempted first and provides a rejection before moving \
-             onto other methods",
-        ),
-        &["method", "result"],
-    )
-    .unwrap();
-    static ref AUTH_RESULTS: ResultVec = ResultVec::from(&AUTH_RESULTS_VEC);
-    static ref AUTH_SUCEEDED: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "auth_succeeded_total",
-            "Number of sessions that reached `auth_succeeded`."
-        ),
-        &["method"],
-    )
-    .unwrap();
-    static ref CODE_GENERATED: IntCounter =
-        register_int_counter!("code_generated_total", "Number of device codes generated").unwrap();
-    static ref CODE_CHECKED_VEC: IntCounterVec = register_int_counter_vec!(
-        opts!(
-            "code_checked_total",
-            "Number of times device codes have been checked",
-        ),
-        &["result"],
-    )
-    .unwrap();
-    static ref CODE_CHECKED: CodeVec = CodeVec::from(&CODE_CHECKED_VEC);
-}
-
-lazy_static! {
-    static ref REQUESTS_VEC: IntCounterVec =
-        register_int_counter_vec!(opts!("requests_total", "Number of requests",), &["method"])
-            .unwrap();
-    static ref REQUESTS: RequestVec = RequestVec::from(&REQUESTS_VEC);
-}
-
-lazy_static! {
-    static ref CHANNELS_VEC: IntCounterVec = register_int_counter_vec!(
-        opts!("channels_total", "Number of channel actions",),
-        &["method"]
-    )
-    .unwrap();
-    static ref CHANNELS: ChannelVec = ChannelVec::from(&CHANNELS_VEC);
-}
 
 fn token_response(error: Report) -> Result<Auth> {
     let http_error = match error.downcast::<reqwest::Error>() {
@@ -201,19 +73,32 @@ pub struct Session {
     start: DateTime<Utc>,
     #[builder(default)]
     state: State,
+    // TODO: there's nothing that actually removes tasks from this set. For anything that is
+    // especially long running, probably makes sense to remove them periodically with
+    // `try_join_next`.
     #[builder(default)]
     tasks: JoinSet<Result<()>>,
 
     // Channels are created in the `channel_open_session` method and removed when a request comes
-    // in for that channel, such as a `pty_request`.
+    // in for that channel, such as a `pty_request`. Note: this is being used additionally as a way
+    // to track whether a channel is open or not. If a channel has been consumed, but is still
+    // open, the value will be null. See `channel_eof` for an explanation on why this matters.
     #[builder(default)]
-    channels: HashMap<ChannelId, russh::Channel<server::Msg>>,
+    channels: HashMap<ChannelId, Option<russh::Channel<server::Msg>>>,
 
-    // Subsystem requests add a writer when they are created and can handle input. This allows for
-    // cross-request communication - such as error reporting in the dashboard from forwarded
-    // connections.
+    // Subsystem requests subscribe on creation if they would like to receive cross-request
+    // communication - such as error reporting in the dashboard from tunnels.
     #[builder(default)]
-    writers: Arc<Mutex<HashMap<ChannelId, UnboundedSender<Event>>>>,
+    broadcast: Broadcast,
+
+    // This is a somewhat special state. With my OpenSSH client, the
+    // `tcpip_forward` connection comes in before the `pty` request. This makes
+    // it difficult to show that there's an open, listening egress tunnel via.
+    // the normal broadcast method. If this has been set, there's a broadcast of
+    // `Event::Tunnel` after the dashboard startups up, very similar to the
+    // window resize event.
+    #[builder(default)]
+    tunnel: Option<Tunnel>,
 }
 
 impl Session {
@@ -315,6 +200,7 @@ impl server::Handler for Session {
     #[tracing::instrument(skip(self, key))]
     async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth> {
         AUTH_ATTEMPTS.publickey.inc();
+        tracing::debug!("publickey");
 
         self.state.key_offered(key);
 
@@ -341,6 +227,7 @@ impl server::Handler for Session {
         _: Option<Response<'async_trait>>,
     ) -> Result<Auth> {
         AUTH_ATTEMPTS.interactive.inc();
+        tracing::debug!("keyboard-interactive");
 
         match self.state {
             State::Unauthenticated | State::KeyOffered(_) | State::InvalidIdentity(_, _) => {
@@ -380,6 +267,7 @@ impl server::Handler for Session {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, channel))]
     async fn channel_open_session(
         &mut self,
         channel: russh::Channel<server::Msg>,
@@ -388,30 +276,49 @@ impl server::Handler for Session {
         TOTAL_SESSIONS.inc();
         ACTIVE_SESSIONS.inc();
         CHANNELS.open_session.inc();
+        tracing::debug!("open-session");
 
-        self.channels.insert(channel.id(), channel);
+        self.channels.insert(channel.id(), Some(channel));
 
         Ok(true)
     }
 
+    #[tracing::instrument(skip(self))]
     async fn channel_close(&mut self, id: ChannelId, _: &mut server::Session) -> Result<()> {
         ACTIVE_SESSIONS.dec();
         CHANNELS.close.inc();
+        tracing::debug!("channel-close");
 
-        if let Some(writer) = self.writers.lock().await.remove(&id) {
+        if let Some(writer) = self.broadcast.remove(&id).await {
             writer.send(Event::Shutdown)?;
         }
 
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, session))]
     async fn channel_eof(&mut self, id: ChannelId, session: &mut server::Session) -> Result<()> {
         CHANNELS.eof.inc();
-        session.close(id);
+        tracing::debug!("channel-eof");
+
+        // You would think that it was safe to always close a channel on an EOF.
+        // Unfortunately, that's not the case. For example,
+        // `tokio::io::copy_bidirectional` closes the source channel *and* the
+        // destination stream down correctly. If we try to close that channel here, the
+        // SSH client freaks out and exits. So, for channels that need to be closed on
+        // EOF (namely SFTP), we track that a channel is still "open" but consumed by
+        // placing `None` into the channels hashmap. If there's any item in there, it
+        // should be removed and have the shutdown triggered.
+        if self.channels.remove(&id).is_some() {
+            session.close(id);
+        }
 
         Ok(())
     }
 
+    // There is some funkiness here around showing status in the dashboard. If two
+    // requests are made in parallel and one finishes first, the `Inactive` event
+    // will be sent, even though one is still active.
     #[tracing::instrument(skip(self, channel, session))]
     async fn channel_open_direct_tcpip(
         &mut self,
@@ -438,28 +345,40 @@ impl server::Handler for Session {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
+        let meta = TunnelBuilder::default()
+            .host(host_to_connect.to_string())
+            .port(u16::try_from(port_to_connect)?)
+            .kind(tunnel::Kind::Ingress)
+            .lifecycle(tunnel::Lifecycle::Active)
+            .build()?;
+
+        self.broadcast.all(Event::Tunnel(Ok(meta.clone()))).await?;
+
         let id = channel.id();
         let handle = session.handle();
-        let writers = self.writers.clone();
+        let broadcast = self.broadcast.clone();
         let client = identity.client(&self.controller)?;
 
         #[allow(clippy::cast_possible_truncation)]
         let ingress = Ingress::new(host_to_connect, port_to_connect as u16)?;
 
         self.tasks.spawn(async move {
+            let meta = meta.into_inactive();
+
             #[allow(clippy::cast_possible_truncation)]
             match ingress.run(client, channel).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    broadcast.all(Event::Tunnel(Ok(meta))).await?;
+                    Ok(())
+                }
                 Err(e) => {
                     let e = e
                         .wrap_err(format!("failed to open connection to {}", ingress.host()))
                         .wrap_err("unable to forward connection");
 
-                    let writers = writers.lock().await;
-
-                    for (_, writer) in writers.iter() {
-                        writer.send(Event::Error(format!("Error:{e:?}")))?;
-                    }
+                    broadcast
+                        .all(Event::Tunnel(Err(tunnel::Error::new(&e, meta))))
+                        .await?;
 
                     handle
                         .close(id)
@@ -481,6 +400,7 @@ impl server::Handler for Session {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, session))]
     async fn window_change_request(
         &mut self,
         id: ChannelId,
@@ -491,24 +411,24 @@ impl server::Handler for Session {
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
         REQUESTS.window_resize.inc();
-
-        let writers = self.writers.lock().await;
-
-        let Some(writer) = writers.get(&id) else {
-            return Err(eyre!("no writer found for channel: {id}"));
-        };
+        tracing::debug!("window change");
 
         #[allow(clippy::cast_possible_truncation)]
-        writer.send(Event::Resize(WindowSize {
-            columns_rows: Size {
-                width: cx as u16,
-                height: cy as u16,
-            },
-            pixels: Size {
-                width: px as u16,
-                height: py as u16,
-            },
-        }))?;
+        self.broadcast
+            .send(
+                &id,
+                Event::Resize(WindowSize {
+                    columns_rows: Size {
+                        width: cx as u16,
+                        height: cy as u16,
+                    },
+                    pixels: Size {
+                        width: px as u16,
+                        height: py as u16,
+                    },
+                }),
+            )
+            .await?;
 
         session.channel_success(id);
 
@@ -543,9 +463,12 @@ impl server::Handler for Session {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
-        let channel = self.channels.remove(&id).ok_or_else(|| {
+        let Some(channel) = self.channels.remove(&id).ok_or_else(|| {
             eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
-        })?;
+        })?
+        else {
+            return Err(eyre!("channel {id} already consumed"));
+        };
 
         let mut dashboard = Dashboard::new(identity.client(&self.controller)?);
 
@@ -566,7 +489,11 @@ impl server::Handler for Session {
             },
         }))?;
 
-        self.writers.lock().await.insert(id, writer);
+        if let Some(tunnel) = self.tunnel.take() {
+            writer.send(Event::Tunnel(Ok(tunnel.clone())))?;
+        }
+
+        self.broadcast.add(id, writer).await?;
         session.channel_success(id);
 
         Ok(())
@@ -608,9 +535,14 @@ impl server::Handler for Session {
             return Ok(());
         }
 
-        let channel = self.channels.remove(&id).ok_or_else(|| {
+        let Some(channel) = self.channels.remove(&id).ok_or_else(|| {
             eyre!("channel not found: {id}").wrap_err("failed to remove channel from channels map")
-        })?;
+        })?
+        else {
+            return Err(eyre!("channel {id} already consumed"));
+        };
+
+        self.channels.insert(id, None);
 
         let handler = sftp::Handler::new(identity.client(&self.controller)?);
         russh_sftp::server::run(channel.into_stream(), handler).await;
@@ -627,7 +559,8 @@ impl server::Handler for Session {
         port: &mut u32,
         session: &mut server::Session,
     ) -> Result<bool, Self::Error> {
-        tracing::info!("egress-tunnel");
+        REQUESTS.tcpip_forward.inc();
+        tracing::debug!("egress-tunnel");
 
         if !self.enabled(&Features::EgressTunnel) {
             return Ok(false);
@@ -640,28 +573,52 @@ impl server::Handler for Session {
             return Err(eyre!("Unexpected state: {:?}", self.state));
         };
 
+        let meta = TunnelBuilder::default()
+            .host(address.to_string())
+            .port(u16::try_from(*port)?)
+            .kind(tunnel::Kind::Egress)
+            .lifecycle(tunnel::Lifecycle::Listening)
+            .build()?;
+        self.tunnel = Some(meta.clone());
+
+        if address == "localhost" {
+            self.broadcast
+                .all(Event::Tunnel(Err(tunnel::Error::new(
+                    &eyre!("use -R <namespace>/<service>:<remote-port>:localhost:<local-port>")
+                        .wrap_err("localhost is not allowed as a source"),
+                    meta.clone(),
+                ))))
+                .await?;
+
+            return Ok(false);
+        }
+
         let handle = session.handle();
-        let writers = self.writers.clone();
+        let broadcast = self.broadcast.clone();
         #[allow(clippy::cast_possible_truncation)]
-        let mut egress = Egress::new(
-            identity,
-            self.controller.current_pod(),
-            address,
-            *port as u16,
-        )?;
+        let mut egress = EgressBuilder::default()
+            .host(address)?
+            .port(*port as u16)
+            .identity(identity)
+            .server(self.controller.server())
+            .meta(meta.clone())
+            .broadcast(broadcast.clone())
+            .build()?;
         let client = identity.client(&self.controller)?;
 
         self.tasks.spawn(async move {
-            match egress.run(client, handle).await {
+            match egress.run(client, handle.clone()).await {
                 Ok(()) => Ok(()),
                 Err(e) => {
-                    let e = e.wrap_err("reverse tunnel failed");
+                    tracing::error!("egress-tunnel: {:?}", e);
 
-                    let writers = writers.lock().await;
-
-                    for (_, writer) in writers.iter() {
-                        writer.send(Event::Error(format!("Error:{e:?}")))?;
-                    }
+                    handle
+                        .disconnect(
+                            Disconnect::ByApplication,
+                            format!("unrecoverable error, reconnect and try again: {e}"),
+                            String::new(),
+                        )
+                        .await?;
 
                     Err(e)
                 }

@@ -28,7 +28,6 @@ You can:
   kuberift itself.
 - [Metrics](docs/metrics.md) - List of the possible metrics exported via.
   prometheus.
-- [TODO](TODO.md) - A selection of outstanding functionality.
 
 [auth]: docs/auth.md
 

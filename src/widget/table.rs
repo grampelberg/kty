@@ -105,6 +105,7 @@ pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<Box<dyn Widget>>
 pub struct Table {
     style: Style,
     title: Option<String>,
+    no_highlight: bool,
 
     state: State,
     constructor: Option<DetailFn>,
@@ -113,6 +114,11 @@ pub struct Table {
 impl Table {
     pub fn title(mut self, title: &str) -> Self {
         self.title = Some(title.to_string());
+        self
+    }
+
+    pub fn no_highlight(mut self) -> Self {
+        self.no_highlight = true;
         self
     }
 
@@ -157,9 +163,15 @@ impl Table {
             .map(|item| item.row(&self.style.row))
             .collect::<Vec<_>>();
 
-        let mut table = widgets::Table::new(rows, K::constraints())
-            .header(K::header().style(self.style.header))
-            .highlight_style(self.style.selected);
+        let mut table = widgets::Table::new(rows, K::constraints());
+
+        if !self.no_highlight {
+            table = table.highlight_style(self.style.selected);
+        }
+
+        if let Some(header) = K::header() {
+            table = table.header(header).style(self.style.header);
+        };
 
         let title = if let Some(title) = self.title.as_ref() {
             title.as_str()

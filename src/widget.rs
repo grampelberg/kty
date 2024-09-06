@@ -7,6 +7,7 @@ pub mod log;
 pub mod pod;
 pub mod table;
 pub mod tabs;
+pub mod tunnel;
 pub mod yaml;
 
 use std::pin::Pin;
@@ -60,7 +61,9 @@ pub trait TableRow<'a> {
     fn constraints() -> Vec<Constraint>;
 
     fn row(&self, style: &RowStyle) -> Row;
-    fn header() -> Row<'a>;
+    fn header() -> Option<Row<'a>> {
+        None
+    }
 }
 
 pub trait Widget: Send {

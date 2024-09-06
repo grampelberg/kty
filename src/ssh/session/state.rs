@@ -10,11 +10,9 @@ pub enum State {
     KeyOffered(PublicKey),
     CodeSent(openid::DeviceCode, Option<PublicKey>),
     InvalidIdentity(Identity, Option<PublicKey>),
-    // TODO: once an authenticated state is reached, the user can really go do whatever they want.
-    // For example, a dashboard and port-forwarding can happen. Instead of trying to show that as
-    // states that get moved between, it feels like this should stop at authenticated and then let
-    // each individual request track its own state. This'll require some extra work on the channel
-    // side of things.
+    // Once an authenticated state is reached, the user can really go do
+    // whatever they want. For example, a dashboard and port-forwarding can
+    // happen. This is intended to be the final state.
     Authenticated(Identity),
 }
 

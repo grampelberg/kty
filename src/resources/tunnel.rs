@@ -1,12 +1,12 @@
 mod egress;
 mod ingress;
 
-use std::pin::Pin;
+use std::hash::{Hash, Hasher};
 
 use chrono::Utc;
-pub use egress::Egress;
-use eyre::Result;
-use futures::{future::join_all, Future};
+use derive_builder::Builder;
+pub use egress::EgressBuilder;
+use eyre::{Report, Result};
 pub use ingress::Ingress;
 use lazy_static::lazy_static;
 use prometheus::{
@@ -14,7 +14,10 @@ use prometheus::{
     HistogramVec, IntCounterVec, IntGaugeVec,
 };
 use prometheus_static_metric::make_static_metric;
+use ratatui::{layout::Constraint, widgets::Row};
 use tokio::io::{AsyncRead, AsyncWrite};
+
+use crate::widget::{table::RowStyle, TableRow};
 
 make_static_metric! {
     pub struct ResourceVec: IntCounter {
@@ -79,6 +82,128 @@ lazy_static! {
     static ref STREAM_ACTIVE: ResourceGaugeVec = ResourceGaugeVec::from(&STREAM_ACTIVE_VEC);
 }
 
+#[derive(Clone, Debug, Builder)]
+pub struct Tunnel {
+    host: String,
+    port: u16,
+    kind: Kind,
+    pub lifecycle: Lifecycle,
+}
+
+impl Tunnel {
+    fn addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+
+    pub fn into_active(mut self) -> Self {
+        self.lifecycle = Lifecycle::Active;
+
+        self
+    }
+
+    pub fn into_inactive(mut self) -> Self {
+        self.lifecycle = Lifecycle::Inactive;
+
+        self
+    }
+
+    pub fn into_listening(mut self) -> Self {
+        self.lifecycle = Lifecycle::Listening;
+
+        self
+    }
+
+    pub fn into_error(mut self) -> Self {
+        self.lifecycle = Lifecycle::Error;
+
+        self
+    }
+}
+
+impl std::fmt::Display for Tunnel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}<{}>", self.kind, self.addr())
+    }
+}
+
+impl Hash for Tunnel {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.addr().hash(state);
+        self.kind.hash(state);
+    }
+}
+
+impl PartialEq for Tunnel {
+    fn eq(&self, other: &Self) -> bool {
+        self.host == other.host && self.port == other.port && self.kind == other.kind
+    }
+}
+
+impl Eq for Tunnel {}
+
+impl<'a> TableRow<'a> for Tunnel {
+    fn constraints() -> Vec<Constraint> {
+        vec![
+            Constraint::Length(10),
+            Constraint::Fill(0),
+            Constraint::Length(15),
+        ]
+    }
+
+    fn row(&self, style: &RowStyle) -> Row {
+        Row::new(vec![
+            self.kind.to_string().to_lowercase(),
+            format!("{}:{}", self.host, self.port),
+            self.lifecycle.to_string(),
+        ])
+        .style(match self.lifecycle {
+            Lifecycle::Active => style.healthy,
+            Lifecycle::Inactive | Lifecycle::Listening => style.normal,
+            Lifecycle::Error => style.unhealthy,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Error {
+    error: String,
+    pub tunnel: Tunnel,
+}
+
+impl Error {
+    pub fn new(error: &Report, tunnel: Tunnel) -> Self {
+        Self {
+            error: format!("{error:?}"),
+            tunnel,
+        }
+    }
+
+    pub fn message(&self) -> String {
+        self.error.clone()
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.tunnel, self.error)
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, strum::Display)]
+pub enum Kind {
+    Ingress,
+    Egress,
+}
+
+#[derive(Clone, Debug, strum::Display)]
+pub enum Lifecycle {
+    Active,
+    Inactive,
+    Listening,
+    Error,
+}
+
+#[derive(Debug)]
 struct StreamMetrics<'a> {
     resource: &'a str,
     direction: &'a str,
@@ -90,9 +215,10 @@ impl StreamMetrics<'_> {
     }
 }
 
+#[tracing::instrument(skip(src, dst))]
 async fn stream(
-    src: (impl AsyncRead + Send, impl AsyncWrite + Send),
-    dst: (impl AsyncRead + Send, impl AsyncWrite + Send),
+    mut src: impl AsyncRead + AsyncWrite + Unpin + Send,
+    mut dst: impl AsyncRead + AsyncWrite + Unpin + Send,
     meta: StreamMetrics<'_>,
 ) -> Result<()> {
     STREAM_TOTAL_VEC.with_label_values(&meta.values()).inc();
@@ -100,21 +226,7 @@ async fn stream(
 
     let start = Utc::now();
 
-    let src_read = src.0;
-    let src_write = src.1;
-    tokio::pin!(src_read);
-    tokio::pin!(src_write);
-
-    let dst_read = dst.0;
-    let dst_write = dst.1;
-    tokio::pin!(dst_read);
-    tokio::pin!(dst_write);
-
-    let mut bytes = join_all::<Vec<Pin<Box<dyn Future<Output = _> + Send>>>>(vec![
-        Box::pin(tokio::io::copy(&mut src_read, &mut dst_write)),
-        Box::pin(tokio::io::copy(&mut dst_read, &mut src_write)),
-    ])
-    .await;
+    let (incoming, outgoing) = tokio::io::copy_bidirectional(&mut src, &mut dst).await?;
 
     STREAM_ACTIVE_VEC.with_label_values(&meta.values()).dec();
     STREAM_DURATION.with_label_values(&meta.values()).observe(
@@ -123,9 +235,6 @@ async fn stream(
             .expect("duration in range")
             .as_secs_f64(),
     );
-
-    let outgoing = bytes.pop().expect("outgoing bytes")?;
-    let incoming = bytes.pop().expect("incoming bytes")?;
 
     STREAM_BYTES
         .with_label_values(&[meta.resource, meta.direction, "incoming"])

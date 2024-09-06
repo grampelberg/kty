@@ -1,5 +1,6 @@
 //! # kuberift
 
+mod broadcast;
 #[warn(dead_code)]
 mod cli;
 mod dashboard;

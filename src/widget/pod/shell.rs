@@ -1,11 +1,9 @@
 use std::{pin::Pin, sync::Arc, vec};
 
 use chrono::{DateTime, Utc};
-use color_eyre::{Section, SectionExt};
 use derive_builder::Builder;
 use eyre::{eyre, Result};
 use futures::StreamExt;
-use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{
     api::{Api, AttachParams},
@@ -24,7 +22,8 @@ use crate::{
     events::{Broadcast, Event, Keypress},
     resources::{
         container::{Container, ContainerExt},
-        pod::{PodExt, StatusError, StatusExt},
+        pod::PodExt,
+        status::StatusExt,
     },
     widget::{
         input::Text,
@@ -78,7 +77,7 @@ impl Widget for Shell {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         if let Err(err) = self.table.draw(frame, area, &self.pod) {
-            tracing::info!("failed to draw table: {}", err);
+            tracing::error!("failed to draw table: {}", err);
         }
 
         Ok(())
@@ -190,33 +189,10 @@ impl Widget for Command {
         propagate!(self.dispatch_input(event));
 
         match event {
-            Event::Finished(result) => result.as_ref().map(|()| Broadcast::Exited).map_err(|err| {
-                let Some(err) = err.downcast_ref::<StatusError>() else {
-                    return eyre!(err.to_string());
-                };
-
-                let separated = err.message.splitn(8, ':');
-
-                eyre!(
-                    "{}",
-                    separated.clone().last().unwrap_or("unknown error").trim()
-                )
-                .section(
-                    separated
-                        .with_position()
-                        .map(|(i, line)| {
-                            let l = line.trim().to_string();
-
-                            match i {
-                                itertools::Position::Middle => format!("├─ {l}"),
-                                itertools::Position::Last => format!("└─ {l}"),
-                                _ => l,
-                            }
-                        })
-                        .join("\n")
-                        .header("Raw:"),
-                )
-            }),
+            Event::Finished(result) => Ok(result
+                .as_ref()
+                .map(|()| Broadcast::Exited)
+                .map_err(std::clone::Clone::clone)?),
             _ => Ok(Broadcast::Ignored),
         }
     }
@@ -307,7 +283,7 @@ impl Raw for Exec {
                 if status.is_success() {
                     Ok(())
                 } else {
-                    Err(StatusError::new(status))
+                    Err(status.into_report())
                 }
             })
             .ok_or(eyre!("status not available"))??;

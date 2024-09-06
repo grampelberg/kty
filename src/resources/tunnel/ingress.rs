@@ -18,6 +18,12 @@ pub struct Ingress {
     port: u16,
 }
 
+impl std::fmt::Display for Ingress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
+    }
+}
+
 impl Ingress {
     pub fn new(host: &str, port: u16) -> Result<Self> {
         Ok(Self {
@@ -33,10 +39,8 @@ impl Ingress {
     pub async fn run(
         &self,
         client: kube::Client,
-        mut channel: russh::Channel<server::Msg>,
+        channel: russh::Channel<server::Msg>,
     ) -> Result<()> {
-        let addr = self.host.addr(client.clone()).await?;
-
         tracing::debug!(
             resource = self.host.resource(),
             direction = "ingress",
@@ -44,7 +48,9 @@ impl Ingress {
             "connection",
         );
 
-        let mut remote = tokio::time::timeout(
+        let addr = self.host.addr(client.clone()).await?;
+
+        let remote = tokio::time::timeout(
             CONNECT_TIMEOUT,
             TcpStream::connect((addr.as_str(), self.port)),
         )
@@ -58,15 +64,11 @@ impl Ingress {
         })?
         .map_err(|e| eyre!(e).wrap_err(format!("connect to {addr}:{} failed", self.port)))?;
 
-        tracing::debug!("connected to {}:{}", self.host, self.port);
-
-        let (dest_read, dest_write) = remote.split();
-        let src_write = channel.make_writer();
-        let src_read = channel.make_reader();
+        tracing::debug!(ingress = self.to_string(), "connected to cluster resource");
 
         stream(
-            (src_read, src_write),
-            (dest_read, dest_write),
+            channel.into_stream(),
+            remote,
             StreamMetrics {
                 resource: self.host.resource(),
                 direction: "ingress",
@@ -74,7 +76,10 @@ impl Ingress {
         )
         .await?;
 
-        tracing::debug!("connection lost for {}:{}", self.host, self.port);
+        tracing::debug!(
+            ingress = self.to_string(),
+            "connection lost cluster resource"
+        );
 
         Ok(())
     }
@@ -83,6 +88,12 @@ impl Ingress {
 struct Host {
     resource: String,
     segments: Vec<String>,
+}
+
+impl std::fmt::Display for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.segments.join("/"))
+    }
 }
 
 impl Host {
@@ -118,12 +129,6 @@ impl Host {
             "nodes" => Node::get_host(client, &self.segments[1..]).await,
             x => Err(eyre!("resource {x} not supported")),
         }
-    }
-}
-
-impl std::fmt::Display for Host {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.segments.join("/"))
     }
 }
 

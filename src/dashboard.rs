@@ -12,7 +12,7 @@ use tokio::{
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    events::{Broadcast, Event, Input, Keypress},
+    events::{Broadcast, Event, Input, Keypress, StringError},
     io::{backend::Backend, Writer},
     widget::{apex::Apex, Raw, Widget},
 };
@@ -185,7 +185,9 @@ async fn run(
                 let raw_result =
                     draw_raw(raw_widget, &mut term, &mut rx, stdout.non_blocking()).await;
 
-                let result = current_widget.dispatch(&Event::Finished(raw_result))?;
+                let result = current_widget.dispatch(&Event::Finished(
+                    raw_result.map_err(|e| StringError(format!("{e:?}"))),
+                ))?;
 
                 state.ui();
 

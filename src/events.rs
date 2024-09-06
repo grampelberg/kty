@@ -1,10 +1,10 @@
-use std::str;
+use std::{error::Error, str};
 
 use eyre::Result;
 use ratatui::backend::WindowSize;
 use tokio_util::bytes::Bytes;
 
-use crate::widget::Raw;
+use crate::{resources::tunnel, widget::Raw};
 
 #[derive(Debug)]
 pub enum Broadcast {
@@ -14,15 +14,15 @@ pub enum Broadcast {
     Raw(Box<dyn Raw>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Input(Input),
     Resize(WindowSize),
     Goto(Vec<String>),
-    Error(String),
     Shutdown,
     Render,
-    Finished(Result<()>),
+    Finished(Result<(), StringError>),
+    Tunnel(Result<tunnel::Tunnel, tunnel::Error>),
 }
 
 impl Event {
@@ -49,7 +49,18 @@ impl From<Bytes> for Event {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct StringError(pub String);
+
+impl Error for StringError {}
+
+impl std::fmt::Display for StringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Input {
     pub key: Keypress,
     raw: Bytes,
