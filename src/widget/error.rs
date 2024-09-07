@@ -68,7 +68,7 @@ impl Widget for Error {
             .block(block)
             .scroll(self.position);
 
-        let width = pg.line_width() as u16 + 2;
+        let width = pg.line_width() as u16 + 1;
 
         let [_, area, _] = Layout::horizontal([
             Constraint::Fill(1),
@@ -77,7 +77,7 @@ impl Widget for Error {
         ])
         .areas(area);
 
-        let height = pg.line_count(area.width) as u16 + 2;
+        let height = pg.line_count(area.width) as u16 + 1;
 
         let [_, vert, _] = Layout::vertical([
             Constraint::Max(10),

@@ -96,9 +96,10 @@ impl Command for Dashboard {
 
         let (stop_tx, mut stop_rx) = unbounded_channel::<()>();
 
-        let mut dashboard = UIDashboard::new(kube::Client::try_default().await?);
-
-        dashboard.start(Stdin::new()?, LocalWriter { stop: stop_tx })?;
+        let dashboard = UIDashboard::builder()
+            .client(kube::Client::try_default().await?)
+            .build()
+            .start(Stdin::new()?, LocalWriter { stop: stop_tx })?;
 
         // TODO: listen to resize events and publish them to the dashboard.
         let (cx, cy) = crossterm::terminal::size()?;
@@ -114,8 +115,6 @@ impl Command for Dashboard {
         }))?;
 
         stop_rx.recv().await;
-
-        dashboard.stop().await?;
 
         Ok(())
     }

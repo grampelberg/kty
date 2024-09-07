@@ -29,6 +29,10 @@ impl Default for Tunnel {
 
 impl Tunnel {
     pub fn height(&self) -> u16 {
+        if self.items.is_empty() {
+            return 0;
+        }
+
         u16::try_from(self.items.len())
             .expect("no truncation")
             .saturating_add(2)
@@ -55,6 +59,10 @@ impl Widget for Tunnel {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        if self.items.is_empty() {
+            return Ok(());
+        }
+
         self.table
             .draw::<HashMap<resources::Tunnel, resources::Tunnel>, resources::Tunnel>(
                 frame,

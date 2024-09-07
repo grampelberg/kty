@@ -78,12 +78,6 @@ impl Widget for Apex {
             debug.draw(frame, area)?;
         }
 
-        if let Some(error) = self.error.as_mut() {
-            error.draw(frame, area)?;
-
-            return Ok(());
-        }
-
         let [main, footer] = Layout::vertical([
             Constraint::Fill(0),
             Constraint::Length(self.tunnel.height()),
@@ -91,6 +85,12 @@ impl Widget for Apex {
         .areas(area);
 
         self.pods.draw(frame, main)?;
-        self.tunnel.draw(frame, footer)
+        self.tunnel.draw(frame, footer)?;
+
+        if let Some(error) = self.error.as_mut() {
+            error.draw(frame, area)?;
+        }
+
+        Ok(())
     }
 }
