@@ -12,12 +12,14 @@ pub mod yaml;
 
 use std::pin::Pin;
 
-use eyre::Result;
+use bon::builder;
+use eyre::{eyre, Result};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{opts, register_int_counter_vec, IntCounterVec};
 use prometheus_static_metric::make_static_metric;
 use ratatui::{
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Rect},
     widgets::Row,
     Frame,
 };
@@ -66,6 +68,20 @@ pub trait TableRow<'a> {
     }
 }
 
+#[builder]
+pub struct Placement {
+    #[builder(default = Constraint::Length(0))]
+    pub horizontal: Constraint,
+    #[builder(default = Constraint::Length(0))]
+    pub vertical: Constraint,
+}
+
+impl Default for Placement {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
 pub trait Widget {
     fn _name(&self) -> &'static str {
         std::any::type_name::<Self>()
@@ -76,6 +92,21 @@ pub trait Widget {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>;
+
+    fn placement(&self) -> Placement {
+        Placement::default()
+    }
+
+    fn zindex(&self) -> u16 {
+        0
+    }
+
+    fn boxed(self) -> Box<dyn Widget>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
 }
 
 impl std::fmt::Debug for Box<dyn Widget> {
@@ -102,6 +133,54 @@ impl std::fmt::Debug for Box<dyn Raw> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(format!("Box<dyn Raw<{}>>", self._name()).as_str())
             .finish()
+    }
+}
+
+pub trait Container {
+    fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>>;
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
+}
+
+impl<T> Widget for T
+where
+    T: Container,
+{
+    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+        propagate!(<T as Container>::dispatch(self, event));
+
+        for (i, widget) in self.widgets().iter_mut().enumerate().rev() {
+            propagate!(widget.dispatch(event), {
+                if i == 0 {
+                    return Ok(Broadcast::Exited);
+                }
+                self.widgets().remove(i);
+            });
+        }
+
+        Ok(Broadcast::Ignored)
+    }
+
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let chunks = self.widgets().iter_mut().chunk_by(|widget| widget.zindex());
+
+        let Some((_, layer)) = chunks
+            .into_iter()
+            .sorted_by(|(a, _), (b, _)| a.cmp(b))
+            .last()
+        else {
+            return Err(eyre!("no widgets to draw"));
+        };
+
+        let layer: Vec<_> = layer.collect();
+
+        let areas =
+            Layout::vertical(layer.iter().map(|widget| widget.placement().vertical)).split(area);
+
+        for (widget, area) in layer.into_iter().zip(areas.iter()) {
+            widget.draw(frame, *area)?;
+        }
+
+        Ok(())
     }
 }
 

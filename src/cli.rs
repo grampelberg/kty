@@ -66,6 +66,7 @@ enum RootCmd {
 
 impl Command for Root {
     fn pre_run(&self) -> Result<()> {
+        // TODO: get this working from EnvFilter
         if LEVEL
             .set(self.verbosity.log_level_filter().as_trace())
             .is_err()

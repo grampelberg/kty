@@ -19,7 +19,7 @@ use super::{
     propagate,
     table::{DetailFn, Table},
     tabs::TabbedView,
-    Widget, WIDGET_VIEWS,
+    Placement, Widget, WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -93,6 +93,13 @@ impl Widget for List {
         }
 
         self.table.draw(frame, area, &self.pods)
+    }
+
+    fn placement(&self) -> Placement {
+        Placement {
+            horizontal: Constraint::Fill(0),
+            vertical: Constraint::Fill(0),
+        }
     }
 }
 

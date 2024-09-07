@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
 use eyre::Result;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{
+    layout::{Constraint, Rect},
+    Frame,
+};
 
 use super::{
     table::{Content, Table},
-    Widget,
+    Placement, Widget,
 };
 use crate::{
     events::{Broadcast, Event},
@@ -69,6 +72,13 @@ impl Widget for Tunnel {
                 area,
                 &self.items,
             )
+    }
+
+    fn placement(&self) -> Placement {
+        super::Placement {
+            horizontal: Constraint::Percentage(100),
+            vertical: Constraint::Length(self.height()),
+        }
     }
 }
 
