@@ -470,12 +470,13 @@ impl server::Handler for Session {
             return Err(eyre!("channel {id} already consumed"));
         };
 
-        let mut dashboard = Dashboard::new(identity.client(&self.controller)?);
-
-        let writer = dashboard.start(
-            channel.into_stream(),
-            Channel::new(id, session.handle().clone()),
-        )?;
+        let writer = Dashboard::builder()
+            .client(identity.client(&self.controller)?)
+            .build()
+            .start(
+                channel.into_stream(),
+                Channel::new(id, session.handle().clone()),
+            )?;
 
         #[allow(clippy::cast_possible_truncation)]
         writer.send(Event::Resize(WindowSize {

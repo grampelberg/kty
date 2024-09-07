@@ -66,7 +66,7 @@ pub trait TableRow<'a> {
     }
 }
 
-pub trait Widget: Send {
+pub trait Widget {
     fn _name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }

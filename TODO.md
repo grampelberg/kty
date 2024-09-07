@@ -2,9 +2,6 @@
 
 ## Documentation
 
-- Get a full architecture explanation together.
-- Explain "how it works" for each piece of functionality.
-
 ## Authorization
 
 - Groups are probably what most users are going to want to use to configure all
@@ -23,9 +20,14 @@
   Note: it looks like Google might require addition verification to get the
   `groups()` scope "externally".
 
+## Server
+
+- Move over to axum for health instead of warp.
+
 ## TUI
 
-- Move the dashboard to a `JoinSet` for the IO and render loops.
+- Dashboard as a struct doesn't really make sense anymore, it should likely be
+  converted over to a simple function.
 
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be
@@ -36,16 +38,21 @@
   immediately. `stern` seemed to be working fine. Recreating the cluster caused
   everything to work again.
 
+- Move over to something like
+  [ratatui-textarea](https://github.com/rhysd/tui-textarea) for the inputs.
+
+- Add an editor to allow for creation of resources (should it just be pods?).
+
+- Rethink the pod detail view. The yaml doesn't feel like the most important
+  thing to look at, neither do logs. Shell feels the closest, but that's not
+  great either. Maybe something like `kubectl describe`? It could be multi-panel
+  too. A log view + overview feels like it might be the most useful. Note that
+  logs are particularly expensive to show right now as the default fetches
+  _everything_ into memory (but doesn't try to render the entire thing every
+  100ms).
+
 ## SFTP
 
-- Document that the permissions here are different than for the dashboard. You
-  can get away with `get` and `exec` on ~everything as long as you use `scp`.
-  Anything `sftp` is going to do a `readdir` and require `list`.
-- The API for `russh_sftp` feels nicer than the one for dashboard currently -
-  hand off a channel entirely instead of dealing with `data()` to begin with.
-  Should `Dashboard` get reimplemented to take something like
-  `async Read + Write` instead? I think I didn't do it this way to being with
-  because of writes being consumed entirely.
 - Allow globs in file paths, eg `/*/nginx**/etc/passwd`.
 - Return an error that is nicer than "no files found" when a container doesn't
   have cat/ls.
@@ -70,3 +77,7 @@
 ## Build
 
 - Move client_id and config_url to a build-time concern.
+
+## Misc
+
+- Move to [bon](https://docs.rs/bon/latest/bon/) instead of `derive_builder`.

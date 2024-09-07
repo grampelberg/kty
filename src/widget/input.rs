@@ -1,6 +1,6 @@
 use eyre::Result;
 use ratatui::{
-    layout::Rect,
+    layout::{Position, Rect},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
@@ -83,7 +83,7 @@ impl Widget for Text {
 
         frame.render_widget(pg, area);
 
-        frame.set_cursor(cmd_pos.x + self.pos, cmd_pos.y);
+        frame.set_cursor_position(Position::new(cmd_pos.x + self.pos, cmd_pos.y));
 
         Ok(())
     }

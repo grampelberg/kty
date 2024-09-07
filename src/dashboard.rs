@@ -1,13 +1,16 @@
 use std::time::Duration;
 
-use eyre::{eyre, Report, Result};
+use bon::builder;
+use eyre::{Report, Result};
 use futures::TryStreamExt;
-use ratatui::{backend::Backend as BackendTrait, widgets::Clear, Terminal};
+use lazy_static::lazy_static;
+use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
+use ratatui::{backend::Backend as BackendTrait, layout::Position, widgets::Clear, Terminal};
 use replace_with::replace_with_or_abort;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
+    runtime::Builder,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
 };
 use tokio_util::io::ReaderStream;
 
@@ -17,43 +20,45 @@ use crate::{
     widget::{apex::Apex, Raw, Widget},
 };
 
+lazy_static! {
+    static ref TOTAL_DASHBOARD_THREADS: IntCounter = register_int_counter!(
+        "dashboards_threads_total",
+        "Total number of dashboard threads"
+    )
+    .unwrap();
+    static ref ACTIVE_DASHBOARD_THREADS: IntGauge = register_int_gauge!(
+        "dashboards_threads_active",
+        "Number of active dashboard threads"
+    )
+    .unwrap();
+}
+
+static FPS: u16 = 10;
+pub static RENDER_INTERVAL: Duration = Duration::from_millis(1000 / FPS as u64);
+
+#[builder]
 pub struct Dashboard {
     client: kube::Client,
-
-    task: Option<JoinHandle<Result<()>>>,
-    tx: Option<UnboundedSender<Event>>,
-
-    tick: Duration,
 }
 
 impl Dashboard {
-    pub fn new(client: kube::Client) -> Self {
-        Self {
-            client,
-            task: None,
-            tx: None,
-
-            tick: Duration::from_millis(100),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_fps(mut self, fps: u64) -> Self {
-        self.tick = Duration::from_millis(1000 / fps);
-
-        self
-    }
-
+    // This spins up:
+    // - An tokio async thread on the current runtime to handle IO by consuming
+    //   `stdin` and publishing `Event`s on a channel.
+    // - A *standard* thread which runs a new thread_local runtime to run the main
+    //   dashboard rendering loop.
+    //
+    // Neither of these threads are awaited on, the dashboard can be dropped and as
+    // long as:
+    // - `stdin` or `stout` have not hit EOF
+    // - `rx` has not been closed
+    // - a `Event::Shutdown` has not been sent
+    // They will continue to run in the background.
     pub fn start<R>(&mut self, stdin: R, stdout: impl Writer) -> Result<UnboundedSender<Event>>
     where
         R: AsyncRead + Send + 'static,
     {
-        if self.task.is_some() {
-            return Err(eyre!("dashboard already started"));
-        }
-
         let (tx, rx) = mpsc::unbounded_channel();
-        self.tx = Some(tx.clone());
 
         let reader_tx = tx.clone();
         tokio::spawn(async move {
@@ -74,38 +79,21 @@ impl Dashboard {
             Ok::<(), Report>(())
         });
 
-        self.task = Some(tokio::spawn(run(
-            self.client.clone(),
-            self.tick,
-            rx,
-            stdout,
-        )));
+        let rt = Builder::new_current_thread().enable_all().build()?;
+        let client = self.client.clone();
+
+        std::thread::spawn(move || {
+            TOTAL_DASHBOARD_THREADS.inc();
+            ACTIVE_DASHBOARD_THREADS.inc();
+
+            if let Err(err) = rt.block_on(run(client, rx, stdout)) {
+                tracing::error!("Unhandled dashboard error: {err:?}");
+            }
+
+            ACTIVE_DASHBOARD_THREADS.dec();
+        });
 
         Ok(tx)
-    }
-
-    pub fn send(&self, ev: Event) -> Result<()> {
-        let Some(tx) = &self.tx else {
-            return Err(eyre!("channel not started"));
-        };
-
-        tx.send(ev)?;
-
-        Ok(())
-    }
-
-    pub async fn stop(&mut self) -> Result<()> {
-        if self.tx.is_some() {
-            self.send(Event::Shutdown)?;
-
-            self.tx = None;
-        }
-
-        if let Some(task) = self.task.take() {
-            task.await?
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -139,12 +127,11 @@ impl Mode {
 
 async fn run(
     client: kube::Client,
-    tick: Duration,
     mut rx: UnboundedReceiver<Event>,
 
     stdout: impl Writer,
 ) -> Result<()> {
-    let mut interval = tokio::time::interval(tick);
+    let mut interval = tokio::time::interval(RENDER_INTERVAL);
     // Because we pause the render loop while rendering a raw widget, the ticks can
     // really back up. While this wouldn't necessarily be a bad thing (just some
     // extra CPU), it causes `Handle.data()` to deadlock if called too quickly.
@@ -207,8 +194,8 @@ async fn run(
     }
 
     term.draw(|frame| {
-        frame.render_widget(Clear, frame.size());
-        frame.set_cursor(0, 0);
+        frame.render_widget(Clear, frame.area());
+        frame.set_cursor_position(Position::new(0, 0));
     })?;
 
     stdout.shutdown("exiting...".to_string()).await?;
@@ -237,7 +224,7 @@ where
     };
 
     term.draw(|frame| {
-        if let Err(err) = widget.draw(frame, frame.size()) {
+        if let Err(err) = widget.draw(frame, frame.area()) {
             panic!("{err}");
         }
     })?;
@@ -271,7 +258,7 @@ where
 {
     fn reset_cursor(&mut self) -> Result<()> {
         self.draw(|frame| {
-            frame.set_cursor(0, 0);
+            frame.set_cursor_position(Position::new(0, 0));
         })?;
 
         Ok(())

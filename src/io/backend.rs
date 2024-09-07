@@ -6,7 +6,7 @@ use std::{
 use ratatui::{
     backend::{Backend as BackendTrait, ClearType, CrosstermBackend, WindowSize},
     buffer::Cell,
-    layout::{Rect, Size},
+    layout::{Position, Size},
 };
 
 /// PTY based wrapper for the crossterm backend.
@@ -62,11 +62,21 @@ where
     }
 
     fn get_cursor(&mut self) -> io::Result<(u16, u16)> {
-        self.crossterm.get_cursor()
+        self.crossterm
+            .get_cursor_position()
+            .map(|pos| (pos.x, pos.y))
     }
 
     fn set_cursor(&mut self, x: u16, y: u16) -> io::Result<()> {
-        self.crossterm.set_cursor(x, y)
+        self.crossterm.set_cursor_position(Position::new(x, y))
+    }
+
+    fn get_cursor_position(&mut self) -> io::Result<Position> {
+        self.crossterm.get_cursor_position()
+    }
+
+    fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> io::Result<()> {
+        self.crossterm.set_cursor_position(position)
     }
 
     fn clear(&mut self) -> io::Result<()> {
@@ -81,12 +91,10 @@ where
         self.crossterm.append_lines(count)
     }
 
-    fn size(&self) -> io::Result<Rect> {
+    fn size(&self) -> io::Result<Size> {
         let size = self.size.lock().unwrap();
 
-        Ok(Rect {
-            x: 0,
-            y: 0,
+        Ok(Size {
             width: size.columns_rows.width,
             height: size.columns_rows.height,
         })
