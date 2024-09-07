@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use super::Widget;
+use super::{Placement, Widget};
 use crate::events::{Broadcast, Event, Keypress, StringError};
 
 #[derive(Default)]
@@ -89,5 +89,16 @@ impl Widget for Error {
         frame.render_widget(pg, vert);
 
         Ok(())
+    }
+
+    fn placement(&self) -> Placement {
+        Placement {
+            horizontal: Constraint::Fill(1),
+            vertical: Constraint::Percentage(100),
+        }
+    }
+
+    fn zindex(&self) -> u16 {
+        1
     }
 }
