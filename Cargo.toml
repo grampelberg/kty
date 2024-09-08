@@ -73,6 +73,7 @@ strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 syntect = "5.2.0"
 syntect-tui = { git = " https://github.com/grampelberg/syntect-tui.git", branch = "ratatui-0.28.1" }
+tachyonfx = "0.6.0"
 tokio = { version = "1.40.0", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.12", features = ["io-util"] }
 tracing = "0.1.40"

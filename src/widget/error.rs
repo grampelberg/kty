@@ -52,10 +52,11 @@ impl Widget for Error {
             Some(Keypress::CursorDown) => {
                 self.position.0 = self.position.0.saturating_add(1);
             }
-            _ => return Ok(Broadcast::Exited),
+            Some(_) => return Ok(Broadcast::Exited),
+            None => {}
         }
 
-        Ok(Broadcast::Consumed)
+        Ok(Broadcast::Ignored)
     }
 
     #[allow(clippy::cast_possible_truncation)]
