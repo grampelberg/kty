@@ -23,9 +23,11 @@ use ratatui::{
     widgets::Row,
     Frame,
 };
+use tachyonfx::{Effect, EffectRenderer, Shader};
 use tokio::{io::AsyncWrite, sync::mpsc::UnboundedReceiver};
 
 use crate::{
+    dashboard::RENDER_INTERVAL,
     events::{Broadcast, Event},
     widget::table::RowStyle,
 };
@@ -137,6 +139,7 @@ impl std::fmt::Debug for Box<dyn Raw> {
 }
 
 pub trait Container {
+    fn effects(&mut self) -> &mut Vec<Effect>;
     fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>>;
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
 }
@@ -154,6 +157,7 @@ where
                     return Ok(Broadcast::Exited);
                 }
                 self.widgets().remove(i);
+                self.effects().reset();
             });
         }
 
@@ -180,7 +184,21 @@ where
             widget.draw(frame, *area)?;
         }
 
+        for effect in self.effects().iter_mut().filter(|effect| effect.running()) {
+            frame.render_effect(effect, area, RENDER_INTERVAL.into());
+        }
+
         Ok(())
+    }
+}
+
+trait ResetEffect {
+    fn reset(&mut self);
+}
+
+impl ResetEffect for Vec<Effect> {
+    fn reset(&mut self) {
+        self.iter_mut().for_each(Shader::reset);
     }
 }
 

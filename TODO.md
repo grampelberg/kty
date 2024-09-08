@@ -29,6 +29,9 @@
 - Dashboard as a struct doesn't really make sense anymore, it should likely be
   converted over to a simple function.
 
+- The initial coalesce in `Apex` is a little weird because of the initial
+  loading screen - feels like it is jumping a couple frames.
+
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be
   crazy for cardinality.
