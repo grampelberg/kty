@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 
+use bon::builder;
 use eyre::Result;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
@@ -101,32 +102,20 @@ impl Default for State {
 
 pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<Box<dyn Widget>> + Send>;
 
-#[derive(Default)]
+#[builder(on(String, into))]
 pub struct Table {
+    #[builder(default)]
     style: Style,
     title: Option<String>,
+    #[builder(default)]
     no_highlight: bool,
 
+    #[builder(default)]
     state: State,
     constructor: Option<DetailFn>,
 }
 
 impl Table {
-    pub fn title(mut self, title: &str) -> Self {
-        self.title = Some(title.to_string());
-        self
-    }
-
-    pub fn no_highlight(mut self) -> Self {
-        self.no_highlight = true;
-        self
-    }
-
-    pub fn constructor(mut self, constructor: DetailFn) -> Self {
-        self.constructor = Some(constructor);
-        self
-    }
-
     pub fn enter(&mut self, idx: usize, filter: Option<String>) -> Result<Broadcast> {
         let Some(constructor) = self.constructor.as_ref() else {
             return Ok(Broadcast::Ignored);

@@ -44,9 +44,10 @@ impl List {
 
         Self {
             pods: pods.clone(),
-            table: Table::default()
+            table: Table::builder()
                 .title("Pods")
-                .constructor(Detail::from_store(client, pods.clone())),
+                .constructor(Detail::from_store(client, pods.clone()))
+                .build(),
 
             route: Vec::new(),
         }

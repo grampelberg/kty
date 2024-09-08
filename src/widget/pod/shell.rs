@@ -52,7 +52,9 @@ impl Shell {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.container.list.inc();
 
-        let mut table = Table::default().constructor(Command::from_pod(client, pod.clone()));
+        let mut table = Table::builder()
+            .constructor(Command::from_pod(client, pod.clone()))
+            .build();
 
         if pod.as_ref().containers(None).len() == 1 {
             let _unused = table.enter(0, None);

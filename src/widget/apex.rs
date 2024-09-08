@@ -1,7 +1,5 @@
-use std::time::Duration;
-
 use eyre::Result;
-use tachyonfx::{fx, Effect, EffectTimer, Interpolation, Shader};
+use tachyonfx::{fx, Effect, EffectTimer, Interpolation};
 use tracing::{metadata::LevelFilter, Level};
 
 use super::{debug::Debug, error::Error, pod, tunnel::Tunnel, Container, ResetEffect, Widget};
