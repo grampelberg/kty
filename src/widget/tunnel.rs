@@ -25,7 +25,7 @@ impl Default for Tunnel {
     fn default() -> Self {
         Self {
             items: HashMap::new(),
-            table: Table::default().title("Tunnels").no_highlight(),
+            table: Table::builder().title("Tunnels").no_highlight(true).build(),
         }
     }
 }

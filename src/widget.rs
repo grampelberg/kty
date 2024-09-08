@@ -139,9 +139,13 @@ impl std::fmt::Debug for Box<dyn Raw> {
 }
 
 pub trait Container {
+    fn dispatch(&mut self, _event: &Event) -> Result<Broadcast> {
+        Ok(Broadcast::Ignored)
+    }
+
     fn effects(&mut self) -> &mut Vec<Effect>;
+
     fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>>;
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast>;
 }
 
 impl<T> Widget for T
