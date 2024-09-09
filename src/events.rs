@@ -12,6 +12,7 @@ pub enum Broadcast {
     Ignored,
     Exited,
     Raw(Box<dyn Raw>),
+    Selected(usize),
 }
 
 #[derive(Debug, Clone)]

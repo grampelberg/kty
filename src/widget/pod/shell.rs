@@ -1,7 +1,7 @@
 use std::{pin::Pin, sync::Arc, vec};
 
+use bon::Builder;
 use chrono::{DateTime, Utc};
-use derive_builder::Builder;
 use eyre::{eyre, Result};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Pod;
@@ -20,17 +20,15 @@ use tokio_util::io::ReaderStream;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
-    resources::{
-        container::{Container, ContainerExt},
-        pod::PodExt,
-        status::StatusExt,
-    },
+    resources,
+    resources::{pod, status::StatusExt, ContainerExt},
     widget::{
-        input::Text,
+        container::Container,
+        input::{Text, TextState},
         propagate,
-        table::{DetailFn, Table},
+        table::{self, CollectionView},
         tabs::Tab,
-        Raw, Widget, WIDGET_VIEWS,
+        Raw, Renderable, StatefulWidget, Widget, WIDGET_VIEWS,
     },
 };
 
@@ -44,23 +42,30 @@ lazy_static! {
 }
 
 pub struct Shell {
-    pod: Arc<Pod>,
-    table: Table,
+    pod: pod::Store,
+    // TODO: because this is nested under table, maybe it makes more sense to name it `Filtered`
+    // since that's what it is.
+    view: table::CollectionView<pod::Store>,
 }
 
 impl Shell {
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.container.list.inc();
 
-        let mut table = Table::builder()
+        let view = CollectionView::builder()
+            .table(table::Table::builder().build())
             .constructor(Command::from_pod(client, pod.clone()))
             .build();
 
-        if pod.as_ref().containers(None).len() == 1 {
-            let _unused = table.enter(0, None);
-        }
+        // TODO: need some way to select immediately.
+        // if pod.as_ref().containers(None).len() == 1 {
+        //     let _unused = table.enter(0, None);
+        // }
 
-        Self { pod, table }
+        Self {
+            pod: pod.into(),
+            view,
+        }
     }
 
     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
@@ -74,11 +79,11 @@ impl Shell {
 impl Widget for Shell {
     // TODO: handle raw and close the detail view.
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        self.table.dispatch(event)
+        Container::dispatch(&mut self.view, event, &mut self.pod)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        if let Err(err) = self.table.draw(frame, area, &self.pod) {
+        if let Err(err) = StatefulWidget::draw(&mut self.view, frame, area, &mut self.pod) {
             tracing::error!("failed to draw table: {}", err);
         }
 
@@ -86,8 +91,10 @@ impl Widget for Shell {
     }
 }
 
+impl Renderable for Shell {}
+
 enum CommandState {
-    Input(Text),
+    Input(Text<TextState>, TextState),
     Attached,
 }
 
@@ -96,16 +103,18 @@ static COMMAND: &str = "/bin/bash";
 struct Command {
     client: kube::Client,
     pod: Arc<Pod>,
-    container: Container,
+    container: resources::Container,
 
     state: CommandState,
 }
 
+#[bon::bon]
 impl Command {
-    pub fn new(client: kube::Client, pod: Arc<Pod>, container: Container) -> Self {
+    #[builder]
+    pub fn new(client: kube::Client, pod: Arc<Pod>, container: resources::Container) -> Self {
         WIDGET_VIEWS.container.cmd.inc();
 
-        let state = CommandState::Input(Command::input(&container));
+        let state = CommandState::Input(Command::input(&container), TextState::new(COMMAND));
 
         Self {
             client,
@@ -115,33 +124,31 @@ impl Command {
         }
     }
 
-    fn input(container: &Container) -> Text {
-        Text::default()
-            .with_title(container.name_any().as_str())
-            .with_content(COMMAND)
+    fn input(container: &resources::Container) -> Text<TextState> {
+        Text::builder().title(container.name_any()).build()
     }
 
-    pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> DetailFn {
-        Box::new(move |idx, filter| {
-            let containers = pod.containers(filter);
-
-            Ok(Box::new(Command::new(
-                client.clone(),
-                pod.clone(),
-                containers.get(idx).unwrap().clone(),
-            )))
+    pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> table::DetailFn<resources::Container> {
+        Box::new(move |container| {
+            Ok(Box::new(
+                Command::builder()
+                    .client(client.clone())
+                    .pod(pod.clone())
+                    .container(container.clone())
+                    .build(),
+            ))
         })
     }
 
     fn dispatch_input(&mut self, event: &Event) -> Result<Broadcast> {
         let cmd = {
-            let CommandState::Input(ref mut txt) = self.state else {
+            let CommandState::Input(widget, state) = &mut self.state else {
                 return Ok(Broadcast::Ignored);
             };
 
-            propagate!(txt.dispatch(event));
+            propagate!(widget.dispatch(event, state));
 
-            txt.content().to_string()
+            state.as_ref().as_ref().ok_or(eyre!("no command"))?.clone()
         };
 
         match event.key() {
@@ -149,13 +156,13 @@ impl Command {
                 self.state = CommandState::Attached;
 
                 Ok(Broadcast::Raw(Box::new(
-                    ExecBuilder::default()
+                    Exec::builder()
                         .start(Utc::now())
                         .client(self.client.clone())
                         .pod(self.pod.clone())
                         .container(self.container.clone())
                         .cmd(cmd)
-                        .build()?,
+                        .build(),
                 )))
             }
             Some(Keypress::Escape) => Ok(Broadcast::Exited),
@@ -164,7 +171,7 @@ impl Command {
     }
 
     fn draw_input(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let CommandState::Input(ref mut txt) = self.state else {
+        let CommandState::Input(widget, state) = &mut self.state else {
             return Ok(());
         };
 
@@ -182,7 +189,7 @@ impl Command {
         ])
         .areas(area);
 
-        txt.draw(frame, area)
+        widget.draw(frame, area, state)
     }
 }
 
@@ -201,20 +208,21 @@ impl Widget for Command {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         match self.state {
-            CommandState::Input(_) => self.draw_input(frame, area)?,
+            CommandState::Input { .. } => self.draw_input(frame, area)?,
             CommandState::Attached => {}
         }
 
         Ok(())
     }
 }
+impl Renderable for Command {}
 
 #[derive(Builder)]
 struct Exec {
     start: DateTime<Utc>,
     client: kube::Client,
     pod: Arc<Pod>,
-    container: Container,
+    container: resources::Container,
     cmd: String,
 }
 

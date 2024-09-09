@@ -8,7 +8,7 @@ use ratatui::{
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-use super::Widget;
+use super::{Renderable, Widget};
 
 pub struct Fps {
     start: Instant,
@@ -53,6 +53,8 @@ impl Widget for Fps {
     }
 }
 
+impl Renderable for Fps {}
+
 pub struct Debug {
     widgets: Vec<Box<dyn Widget>>,
 }
@@ -89,5 +91,14 @@ impl Widget for Debug {
         }
 
         Ok(())
+    }
+}
+
+impl Renderable for Debug {
+    fn placement(&self) -> super::Placement {
+        super::Placement {
+            vertical: Constraint::Length(0),
+            ..super::Placement::default()
+        }
     }
 }

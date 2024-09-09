@@ -1,22 +1,21 @@
-use std::borrow::BorrowMut;
-
-use bon::builder;
-use eyre::Result;
+use eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use ratatui::{
-    layout::Rect,
-    prelude::*,
+    layout::{Constraint, Rect},
+    prelude::Stylize,
+    style,
     style::{palette::tailwind, Modifier},
-    widgets::{self, Block, Borders, Clear, TableState},
+    widgets::{self, Block, Borders, TableState},
     Frame,
 };
+use tachyonfx::Effect;
 
-use super::{input::Text, propagate, TableRow, Widget};
-use crate::{
-    events::{Broadcast, Event, Keypress},
-    widget::error::Error,
+use super::{
+    input::{Filterable, Text},
+    Container, Contents, Mode, Renderable, StatefulWidget, Widget,
 };
+use crate::events::{Broadcast, Event, Keypress};
 
 lazy_static! {
     static ref TABLE_FILTER: IntCounter = register_int_counter!(
@@ -42,6 +41,16 @@ impl Default for RowStyle {
     }
 }
 
+pub trait Row {
+    fn constraints() -> Vec<Constraint>;
+
+    fn header<'a>() -> Option<widgets::Row<'a>> {
+        None
+    }
+
+    fn row(&self, style: &RowStyle) -> widgets::Row;
+}
+
 pub struct Style {
     pub border: style::Style,
     pub header: style::Style,
@@ -54,251 +63,187 @@ impl Default for Style {
         Self {
             border: style::Style::default(),
             header: style::Style::default().bold(),
-            selected: style::Style::default().add_modifier(Modifier::REVERSED),
+            selected: style::Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .bg(tailwind::GRAY.c700),
             row: RowStyle::default(),
         }
     }
 }
 
-pub trait Content<'a, K>
+pub trait Items
 where
-    K: TableRow<'a>,
+    Self::Item: Row,
 {
-    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>>;
+    type Item;
+
+    fn items(&self) -> Vec<Self::Item>;
 }
 
-enum State {
-    List(TableState),
-    Filtered(TableState, Text),
-    Detail(Box<dyn Widget>),
-}
-
-impl State {
-    fn list(&mut self) {
-        *self = State::default();
-    }
-
-    fn filter(&mut self) {
-        TABLE_FILTER.inc();
-
-        let state = match self {
-            State::List(state) => state.to_owned(),
-            _ => TableState::default().with_selected(0),
-        };
-
-        *self = State::Filtered(state, Text::default().with_title("Filter"));
-    }
-
-    fn detail(&mut self, widget: Box<dyn Widget>) {
-        *self = State::Detail(widget);
-    }
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::List(TableState::default().with_selected(0))
-    }
-}
-
-pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<Box<dyn Widget>> + Send>;
-
-#[builder(on(String, into))]
-pub struct Table {
-    #[builder(default)]
+pub struct Table<S> {
+    // Configuration of how the table looks
     style: Style,
     title: Option<String>,
-    #[builder(default)]
-    no_highlight: bool,
+    highlight: bool,
 
-    #[builder(default)]
-    state: State,
-    constructor: Option<DetailFn>,
+    // Internal state
+    view: TableState,
+
+    _phantom: std::marker::PhantomData<S>,
 }
 
-impl Table {
-    pub fn enter(&mut self, idx: usize, filter: Option<String>) -> Result<Broadcast> {
-        let Some(constructor) = self.constructor.as_ref() else {
-            return Ok(Broadcast::Ignored);
-        };
-
-        let detail = { (constructor)(idx, filter)? };
-
-        self.state.detail(detail);
-
-        Ok(Broadcast::Consumed)
-    }
-
-    #[allow(clippy::unnecessary_wraps)]
-    fn render_list<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C) -> Result<()>
-    where
-        C: Content<'a, K>,
-        K: TableRow<'a>,
-    {
-        let (state, filter) = match self.state {
-            State::Filtered(ref mut state, ref filter) => (state, Some(filter)),
-            State::List(ref mut state) => (state, None),
-            State::Detail(_) => return Ok(()),
-        };
-
-        let items = content.items(filter.map(Text::content));
-        let max = items.len().saturating_sub(1);
-
-        if state.selected().unwrap_or_default() > max {
-            state.select(Some(max));
-        }
-
-        let rows = items
-            .iter()
-            .map(|item| item.row(&self.style.row))
-            .collect::<Vec<_>>();
-
-        let mut table = widgets::Table::new(rows, K::constraints());
-
-        if !self.no_highlight {
-            table = table.highlight_style(self.style.selected);
-        }
-
-        if let Some(header) = K::header() {
-            table = table.header(header).style(self.style.header);
-        };
-
-        let title = if let Some(title) = self.title.as_ref() {
-            title.as_str()
+#[bon::bon]
+impl<S> Table<S>
+where
+    S: Items,
+{
+    #[builder(on(String, into))]
+    pub fn new(
+        #[builder(default)] style: Style,
+        title: Option<String>,
+        #[builder(default = true)] highlight: bool,
+        #[builder(default = true)] selected: bool,
+    ) -> Self {
+        let view = if selected {
+            TableState::default().with_selected(0)
         } else {
-            ""
+            TableState::default()
         };
 
-        if self.title.is_some() {
-            let border = Block::default()
-                .title(title) // TODO: need a breadcrumb
-                .borders(Borders::ALL)
-                .style(self.style.border);
-
-            table = table.block(border);
-        };
-
-        frame.render_stateful_widget(table, area, state);
-
-        Ok(())
-    }
-
-    fn render_filter(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let State::Filtered(_, filter) = self.state.borrow_mut() else {
-            return Ok(());
-        };
-
-        let [_, filter_area] =
-            Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).areas(area);
-
-        // Command ends up being written *over the table (which writes to
-        // the whole screen). The clear makes sure that table
-        // items don't show up weirdly behind a transparent command
-        // buffer. frame.
-        frame.render_widget(Clear, filter_area);
-
-        filter.draw(frame, filter_area)
-    }
-
-    fn render_detail(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let State::Detail(ref mut widget) = self.state.borrow_mut() else {
-            return Ok(());
-        };
-
-        widget.draw(frame, area)
-    }
-
-    pub fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        if let Event::Goto(route) = event {
-            self.handle_route(route)?;
-
-            return Ok(Broadcast::Consumed);
+        Self {
+            style,
+            title,
+            highlight,
+            view,
+            _phantom: std::marker::PhantomData,
         }
-
-        propagate!(self.dispatch_list(event), {});
-        propagate!(self.dispatch_filter(event), self.state.list());
-        propagate!(self.dispatch_detail(event), self.state.list());
-
-        Ok(Broadcast::Ignored)
     }
+}
 
-    //     #[allow(clippy::unnecessary_wraps)]
-    fn dispatch_list(&mut self, event: &Event) -> Result<Broadcast> {
-        let (state, filter) = match self.state {
-            State::Filtered(ref mut state, ref filter) => (state, Some(filter)),
-            State::List(ref mut state) => (state, None),
-            State::Detail(_) => return Ok(Broadcast::Ignored),
-        };
+impl<S> StatefulWidget for Table<S>
+where
+    S: Items,
+{
+    type State = S;
 
+    fn dispatch(&mut self, event: &Event, _state: &mut Self::State) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
         match key {
-            Keypress::CursorDown => {
-                state.select(Some(state.selected().unwrap_or_default().saturating_add(1)));
-            }
-            Keypress::CursorUp => {
-                state.select(Some(state.selected().unwrap_or_default().saturating_sub(1)));
-            }
-            // TODO: this should be handled by a router
-            Keypress::Printable('/') => self.state.filter(),
-            Keypress::Enter => {
-                let idx = state.selected().unwrap_or_default();
-                let filter = filter.map(|f| f.content().to_string());
-
-                self.enter(idx, filter)?;
-
-                return Ok(Broadcast::Consumed);
-            }
+            Keypress::CursorDown | Keypress::Printable('j') => self.view.select_next(),
+            Keypress::CursorUp | Keypress::Printable('k') => self.view.select_previous(),
             _ => return Ok(Broadcast::Ignored),
         }
 
         Ok(Broadcast::Consumed)
     }
 
-    fn dispatch_filter(&mut self, event: &Event) -> Result<Broadcast> {
-        let State::Filtered(_, ref mut filter) = self.state.borrow_mut() else {
-            return Ok(Broadcast::Ignored);
-        };
+    fn draw<'a>(&mut self, frame: &mut Frame, area: Rect, state: &mut Self::State) -> Result<()> {
+        let items = state.items();
 
-        filter.dispatch(event)
-    }
+        let rows = items
+            .iter()
+            .map(|item| item.row(&self.style.row))
+            .collect::<Vec<_>>();
 
-    #[allow(clippy::unnecessary_wraps)]
-    fn dispatch_detail(&mut self, event: &Event) -> Result<Broadcast> {
-        let State::Detail(ref mut widget) = self.state.borrow_mut() else {
-            return Ok(Broadcast::Ignored);
-        };
+        let mut table = widgets::Table::new(rows, S::Item::constraints());
+        let mut border = Block::default()
+            .borders(Borders::ALL)
+            .style(self.style.border);
 
-        match widget.dispatch(event) {
-            Ok(result) => Ok(result),
-            Err(err) => {
-                self.state.detail(Box::new(Error::from(err)));
-
-                Ok(Broadcast::Consumed)
-            }
+        if self.highlight {
+            table = table.highlight_style(self.style.selected);
         }
-    }
 
-    fn handle_route(&mut self, route: &[String]) -> Result<()> {
-        let (first, rest) = route.split_first().unwrap();
+        if let Some(header) = S::Item::header() {
+            table = table.header(header).style(self.style.header);
+        };
 
-        self.enter(0, Some(first.to_string()))?;
+        if let Some(title) = self.title.as_ref() {
+            border = border.title(title.as_str());
+        };
 
-        self.dispatch_detail(&Event::Goto(rest.to_vec()))?;
+        table = table.block(border);
 
-        Ok(())
-    }
-
-    pub fn draw<'a, C, K>(&mut self, frame: &mut Frame, area: Rect, content: &C) -> Result<()>
-    where
-        C: Content<'a, K>,
-        K: TableRow<'a>,
-    {
-        self.render_list(frame, area, content)?;
-        self.render_filter(frame, area)?;
-        self.render_detail(frame, area)?;
+        frame.render_stateful_widget(table, area, &mut self.view);
 
         Ok(())
     }
 }
+
+impl<S> Renderable for Table<S> where S: Items {}
+
+pub type DetailFn<I> = Box<dyn Fn(&I) -> Result<Box<dyn Widget>> + Send>;
+
+pub struct CollectionView<S>
+where
+    S: Items + Filterable,
+{
+    constructor: DetailFn<S::Item>,
+
+    effects: Vec<Effect>,
+    widgets: Vec<Mode<S>>,
+
+    _phantom: std::marker::PhantomData<S>,
+}
+
+#[bon::bon]
+impl<S> CollectionView<S>
+where
+    S: Items + Filterable + 'static,
+{
+    #[builder]
+    pub fn new(table: Table<S>, constructor: DetailFn<S::Item>) -> Self {
+        let widgets = vec![table.mode()];
+
+        Self {
+            constructor,
+            effects: Vec::new(),
+            widgets,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<S> Container for CollectionView<S>
+where
+    S: Items + Filterable + 'static,
+{
+    type State = S;
+
+    fn contents(&mut self) -> Contents<Self::State> {
+        Contents {
+            effects: &mut self.effects,
+            widgets: &mut self.widgets,
+        }
+    }
+
+    fn dispatch(&mut self, event: &Event, state: &mut Self::State) -> Result<Broadcast> {
+        let Some(key) = event.key() else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        if let Keypress::Printable('/') = key {
+            TABLE_FILTER.inc();
+            self.widgets
+                .push(Text::builder().title("Filter").build().mode());
+
+            return Ok(Broadcast::Consumed);
+        }
+
+        match self.dispatch_children(event, state)? {
+            Broadcast::Selected(idx) => {
+                self.widgets.push(Mode::Stateless((self.constructor)(
+                    state.items().get(idx).ok_or(eyre!("{idx} not found"))?,
+                )?));
+
+                Ok(Broadcast::Consumed)
+            }
+            x => Ok(x),
+        }
+    }
+}
+
+impl<S> Renderable for CollectionView<S> where S: Items + Filterable + 'static {}

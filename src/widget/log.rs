@@ -15,7 +15,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use super::{tabs::Tab, Widget, WIDGET_VIEWS};
+use super::{tabs::Tab, Renderable, Widget, WIDGET_VIEWS};
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::{
@@ -180,6 +180,8 @@ impl Widget for Log {
         Ok(())
     }
 }
+
+impl Renderable for Log {}
 
 impl Drop for Log {
     fn drop(&mut self) {

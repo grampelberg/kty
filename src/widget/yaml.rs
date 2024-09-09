@@ -15,7 +15,7 @@ use syntect::{
 };
 use syntect_tui::into_span;
 
-use super::{Widget, WIDGET_VIEWS_VEC};
+use super::{Renderable, Widget, WIDGET_VIEWS_VEC};
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::Yaml as YamlResource,
@@ -135,3 +135,5 @@ impl Widget for Yaml {
         Ok(())
     }
 }
+
+impl Renderable for Yaml {}

@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-use super::{error::Error, propagate, Widget};
+use super::{error::Error, propagate, Renderable, Widget};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub struct Tab {
@@ -138,3 +138,5 @@ impl Widget for TabbedView {
         Ok(())
     }
 }
+
+impl Renderable for TabbedView {}

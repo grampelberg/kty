@@ -19,10 +19,7 @@ use super::{
     container::{Container, ContainerExt},
     Compare, Filter,
 };
-use crate::widget::{
-    table::{Content, RowStyle},
-    TableRow,
-};
+use crate::widget::{input::Filterable, table};
 
 pub enum Phase {
     Pending,
@@ -227,8 +224,8 @@ impl PodExt for Pod {
     }
 }
 
-impl<'a> TableRow<'a> for Arc<Pod> {
-    fn header() -> Option<Row<'a>> {
+impl table::Row for Arc<Pod> {
+    fn header<'a>() -> Option<Row<'a>> {
         Some(Row::new(vec![
             Cell::from("Namespace"),
             Cell::from("Name"),
@@ -250,7 +247,7 @@ impl<'a> TableRow<'a> for Arc<Pod> {
         ]
     }
 
-    fn row(&self, style: &RowStyle) -> Row {
+    fn row(&self, style: &table::RowStyle) -> Row {
         Row::new(vec![
             self.namespace().unwrap_or_default(),
             self.name_any(),
@@ -288,8 +285,28 @@ impl Compare for Arc<Pod> {
     }
 }
 
-impl<'a> Content<'a, Container> for Arc<Pod> {
-    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
-        self.containers(filter)
+pub struct Store {
+    pod: Arc<Pod>,
+    filter: Option<String>,
+}
+
+impl From<Arc<Pod>> for Store {
+    fn from(pod: Arc<Pod>) -> Self {
+        Self { pod, filter: None }
+    }
+}
+
+impl table::Items for Store {
+    type Item = Container;
+
+    // TODO: fix filtering here.
+    fn items(&self) -> Vec<Container> {
+        self.pod.containers(self.filter.clone())
+    }
+}
+
+impl Filterable for Store {
+    fn filter<'a>(&mut self) -> &mut Option<String> {
+        &mut self.filter
     }
 }

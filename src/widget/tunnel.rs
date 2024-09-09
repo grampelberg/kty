@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use eyre::Result;
 use ratatui::{
@@ -6,26 +6,25 @@ use ratatui::{
     Frame,
 };
 
-use super::{
-    table::{Content, Table},
-    Placement, Widget,
-};
+use super::{table, Placement, Renderable, StatefulWidget, Widget};
 use crate::{
     events::{Broadcast, Event},
-    resources,
-    widget::TableRow,
+    resources::{self},
 };
 
 pub struct Tunnel {
-    items: HashMap<resources::Tunnel, resources::Tunnel>,
-    table: Table,
+    items: BTreeMap<resources::Tunnel, resources::Tunnel>,
+    table: table::Table<BTreeMap<resources::Tunnel, resources::Tunnel>>,
 }
 
 impl Default for Tunnel {
     fn default() -> Self {
         Self {
-            items: HashMap::new(),
-            table: Table::builder().title("Tunnels").no_highlight(true).build(),
+            items: BTreeMap::new(),
+            table: table::Table::builder()
+                .title("Tunnels")
+                .highlight(false)
+                .build(),
         }
     }
 }
@@ -66,14 +65,11 @@ impl Widget for Tunnel {
             return Ok(());
         }
 
-        self.table
-            .draw::<HashMap<resources::Tunnel, resources::Tunnel>, resources::Tunnel>(
-                frame,
-                area,
-                &self.items,
-            )
+        self.table.draw(frame, area, &mut self.items)
     }
+}
 
+impl Renderable for Tunnel {
     fn placement(&self) -> Placement {
         super::Placement {
             horizontal: Constraint::Percentage(100),
@@ -82,11 +78,10 @@ impl Widget for Tunnel {
     }
 }
 
-impl<'a, K> Content<'a, K> for HashMap<resources::Tunnel, resources::Tunnel>
-where
-    K: TableRow<'a>,
-{
-    fn items(&self, _: Option<String>) -> Vec<impl TableRow<'a>> {
+impl table::Items for BTreeMap<resources::Tunnel, resources::Tunnel> {
+    type Item = resources::Tunnel;
+
+    fn items(&self) -> Vec<resources::Tunnel> {
         self.iter().map(|(_, v)| v.clone()).collect()
     }
 }

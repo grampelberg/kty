@@ -1,6 +1,19 @@
 # TODO
 
+- Implement multi-cluster.
+
 ## Documentation
+
+- Getting started needs help, in particular:
+  - Granting your user should probably go before the install instructions.
+  - Say something about the error when you don't have authorization.
+- Make the getting started on a real cluster instructions more clear. In
+  particular, it seems like it is a little difficult to see the install commands
+  and realize that's what you need to use.
+
+## `users grant`
+
+- Allow YAML output for users who don't have a `kubeconfig`.
 
 ## Authorization
 
@@ -27,6 +40,12 @@
 ## TUI
 
 - Allow wrapping around with the tabs (so left from 0 goes to the end).
+
+- Implement vim [key bindings](https://vim.rtorr.com).
+
+- Move navigation dispatch (up, down) into common code.
+
+- Add routing back in.
 
 - Dashboard as a struct doesn't really make sense anymore, it should likely be
   converted over to a simple function.
@@ -82,7 +101,14 @@
 
 ## Build
 
+- Figure out why `git cliff` goes `0.2.0` -> `0.2.1` -> `0.3.0` instead of
+  `0.2.2`.
 - Move client_id and config_url to a build-time concern.
+
+## Deployment
+
+- Add `kustomize` to allow for an easier getting started.
+- Make `helm install` work if someone's checked the repo out.
 
 ## Misc
 

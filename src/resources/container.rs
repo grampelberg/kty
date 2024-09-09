@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use super::{age::Age, Compare};
-use crate::widget::{table::RowStyle, TableRow};
+use crate::widget::table;
 
 #[allow(clippy::module_name_repetitions)]
 pub trait ContainerExt {
@@ -196,8 +196,8 @@ impl ContainerExt for Container {
     }
 }
 
-impl<'a> TableRow<'a> for Container {
-    fn header() -> Option<Row<'a>> {
+impl table::Row for Container {
+    fn header<'a>() -> Option<Row<'a>> {
         Some(Row::new(vec![
             Cell::from("Name"),
             Cell::from("Image"),
@@ -219,7 +219,7 @@ impl<'a> TableRow<'a> for Container {
         ]
     }
 
-    fn row(&self, style: &RowStyle) -> Row {
+    fn row(&self, style: &table::RowStyle) -> Row {
         Row::new(vec![
             Cell::from(self.name_any()),
             Cell::from(self.image()),

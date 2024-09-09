@@ -2,7 +2,7 @@ pub mod shell;
 
 use std::sync::Arc;
 
-use eyre::{eyre, Result};
+use eyre::Result;
 use k8s_openapi::api::core::v1::Pod;
 use kube::ResourceExt;
 use ratatui::{
@@ -10,16 +10,16 @@ use ratatui::{
     prelude::*,
     style::{Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
 use super::{
     loading::Loading,
     log::Log,
     propagate,
-    table::{DetailFn, Table},
+    table::{CollectionView, DetailFn, Table},
     tabs::TabbedView,
-    Placement, Widget, WIDGET_VIEWS,
+    Placement, Renderable, StatefulWidget, Widget, WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -28,10 +28,8 @@ use crate::{
 };
 
 pub struct List {
-    pods: Arc<Store<Pod>>,
-    table: Table,
-
-    route: Vec<String>,
+    pods: Store<Pod>,
+    view: CollectionView<Store<Pod>>,
 }
 
 impl List {
@@ -40,29 +38,19 @@ impl List {
     pub fn new(client: kube::Client) -> Self {
         WIDGET_VIEWS.pod.list.inc();
 
-        let pods = Arc::new(Store::new(client.clone()));
-
         Self {
-            pods: pods.clone(),
-            table: Table::builder()
-                .title("Pods")
-                .constructor(Detail::from_store(client, pods.clone()))
+            pods: Store::new(client.clone()),
+            view: CollectionView::builder()
+                .table(Table::builder().title("Pods").build())
+                .constructor(Detail::from_store(client))
                 .build(),
-
-            route: Vec::new(),
         }
     }
 }
 
 impl Widget for List {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        if let Event::Goto(route) = event {
-            self.route.clone_from(route);
-
-            return Ok(Broadcast::Consumed);
-        }
-
-        propagate!(self.table.dispatch(event));
+        propagate!(self.view.dispatch(event, &mut self.pods));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
@@ -78,24 +66,11 @@ impl Widget for List {
             return Ok(());
         }
 
-        if !self.route.is_empty() {
-            let route = self.route.clone();
-
-            if let Err(e) = self.table.dispatch(&Event::Goto(route)) {
-                frame.render_widget(
-                    Paragraph::new(e.to_string()).block(Block::default().borders(Borders::ALL)),
-                    area,
-                );
-
-                return Ok(());
-            }
-
-            self.route.clear();
-        }
-
-        self.table.draw(frame, area, &self.pods)
+        self.view.draw(frame, area, &mut self.pods)
     }
+}
 
+impl Renderable for List {
     fn placement(&self) -> Placement {
         Placement {
             horizontal: Constraint::Fill(0),
@@ -136,14 +111,8 @@ impl Detail {
         Self { pod, view }
     }
 
-    pub fn from_store(client: kube::Client, pods: Arc<Store<Pod>>) -> DetailFn {
-        Box::new(move |idx, filter| {
-            let pod = pods
-                .get(idx, filter)
-                .ok_or_else(|| eyre!("pod not found"))?;
-
-            Ok(Box::new(Detail::new(&client, pod.clone())))
-        })
+    pub fn from_store(client: kube::Client) -> DetailFn<Arc<Pod>> {
+        Box::new(move |pod| Ok(Box::new(Detail::new(&client, pod.clone()))))
     }
 
     fn breadcrumb(&self) -> Vec<Span> {
@@ -185,3 +154,5 @@ impl Widget for Detail {
         self.view.draw(frame, inner)
     }
 }
+
+impl Renderable for Detail {}

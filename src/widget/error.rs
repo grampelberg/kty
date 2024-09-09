@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use super::{Placement, Widget};
+use super::{Placement, Renderable, Widget};
 use crate::events::{Broadcast, Event, Keypress, StringError};
 
 #[derive(Default)]
@@ -91,7 +91,9 @@ impl Widget for Error {
 
         Ok(())
     }
+}
 
+impl Renderable for Error {
     fn placement(&self) -> Placement {
         Placement {
             horizontal: Constraint::Fill(1),

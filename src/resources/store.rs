@@ -2,6 +2,7 @@ use std::{future::ready, iter::Iterator, sync::Arc};
 
 use eyre::Result;
 use futures::StreamExt;
+use itertools::Itertools;
 use kube::{
     runtime::{
         self,
@@ -15,7 +16,7 @@ use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
 
 use super::{Compare, Filter};
-use crate::widget::{table, TableRow};
+use crate::widget::{input, table};
 
 async fn is_ready<K>(reader: reflector::Store<K>) -> Result<(), WriterDropped>
 where
@@ -43,6 +44,7 @@ where
     is_ready: JoinHandle<Result<(), WriterDropped>>,
     watcher: JoinHandle<()>,
     reader: reflector::Store<K>,
+    filter: Option<String>,
 }
 
 impl<K> Store<K>
@@ -80,27 +82,8 @@ where
             is_ready,
             watcher,
             reader,
+            filter: None,
         }
-    }
-
-    pub fn items(&self, filter: Option<String>) -> Vec<Arc<K>> {
-        let mut items = filter
-            .map(|filter| {
-                self.reader
-                    .state()
-                    .into_iter()
-                    .filter(|obj| obj.matches(filter.as_str()))
-                    .collect()
-            })
-            .unwrap_or(self.reader.state());
-
-        items.sort_by(Compare::cmp);
-
-        items
-    }
-
-    pub fn get(&self, idx: usize, filter: Option<String>) -> Option<Arc<K>> {
-        self.items(filter).get(idx).cloned()
     }
 
     pub fn loading(&self) -> bool {
@@ -124,7 +107,7 @@ where
     }
 }
 
-impl<'a, K> table::Content<'a, Arc<K>> for Arc<Store<K>>
+impl<K> table::Items for Store<K>
 where
     K: Filter
         + kube::Resource<DynamicType = ()>
@@ -134,9 +117,34 @@ where
         + Sync
         + DeserializeOwned
         + 'static,
-    Arc<K>: TableRow<'a> + Compare,
+    Arc<K>: table::Row + Compare,
 {
-    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
-        Store::items(self, filter)
+    type Item = Arc<K>;
+
+    fn items(&self) -> Vec<Self::Item> {
+        let iter = self.reader.state().into_iter().sorted_by(Compare::cmp);
+
+        if self.filter.is_none() {
+            iter.collect()
+        } else {
+            iter.filter(|obj| obj.matches(self.filter.as_ref().unwrap().as_str()))
+                .collect()
+        }
+    }
+}
+
+impl<K> input::Filterable for Store<K>
+where
+    K: Filter
+        + kube::Resource<DynamicType = ()>
+        + Clone
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + DeserializeOwned
+        + 'static,
+{
+    fn filter(&mut self) -> &mut Option<String> {
+        &mut self.filter
     }
 }

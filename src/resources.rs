@@ -7,6 +7,7 @@ pub mod store;
 pub mod tunnel;
 
 use color_eyre::Section;
+pub use container::{Container, ContainerExt};
 use eyre::{eyre, Result};
 pub use file::File;
 use futures::StreamExt;
