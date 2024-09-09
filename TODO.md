@@ -26,6 +26,8 @@
 
 ## TUI
 
+- Allow wrapping around with the tabs (so left from 0 goes to the end).
+
 - Dashboard as a struct doesn't really make sense anymore, it should likely be
   converted over to a simple function.
 
@@ -59,6 +61,7 @@
 - Allow globs in file paths, eg `/*/nginx**/etc/passwd`.
 - Return an error that is nicer than "no files found" when a container doesn't
   have cat/ls.
+- Test `rsync` SSH integration.
 
 ## SSH Functionality
 
