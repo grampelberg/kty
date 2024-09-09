@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use color_eyre::{Section, SectionExt};
 use eyre::{eyre, Report, Result};
-use futures::{future::BoxFuture, AsyncBufReadExt, FutureExt, TryStreamExt};
+use futures::{
+    future::{try_join_all, BoxFuture},
+    io::AsyncBufRead,
+    stream, AsyncBufReadExt, FutureExt, TryStreamExt,
+};
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
@@ -12,7 +16,13 @@ use tokio::{
 };
 
 use super::{tabs::Tab, Widget, WIDGET_VIEWS};
-use crate::events::{Broadcast, Event, Keypress};
+use crate::{
+    events::{Broadcast, Event, Keypress},
+    resources::{
+        container::{Container, ContainerExt},
+        pod::PodExt,
+    },
+};
 
 pub struct Log {
     task: JoinHandle<Result<()>>,
@@ -185,11 +195,37 @@ fn log_stream<'a>(
     params: LogParams,
 ) -> BoxFuture<'a, Result<()>> {
     async move {
-        let mut stream = match Api::<Pod>::namespaced(client.clone(), &pod.namespace().unwrap())
-            .log_stream(&pod.name_any(), &params)
-            .await
-        {
-            Ok(stream) => stream.lines(),
+        let client = Api::<Pod>::namespaced(client.clone(), &pod.namespace().unwrap());
+
+        let containers = try_join_all(pod.containers(None).iter().map(|c| {
+            let mut params = params.clone();
+            params.container = Some(c.name_any());
+
+            container_stream(&client, c, params)
+        }))
+        .await?;
+
+        let mut all_logs = stream::select_all(containers.into_iter().map(AsyncBufReadExt::lines));
+
+        while let Some(line) = all_logs.try_next().await? {
+            tx.send(line)?;
+        }
+
+        tracing::debug!(pod = pod.name_any(), "stream ended");
+
+        Ok(())
+    }
+    .boxed()
+}
+
+fn container_stream<'a>(
+    client: &'a Api<Pod>,
+    container: &'a Container,
+    params: LogParams,
+) -> BoxFuture<'a, Result<impl AsyncBufRead>> {
+    async move {
+        match client.log_stream(&container.pod_name(), &params).await {
+            Ok(stream) => Ok(stream),
             Err(err) => {
                 let kube::Error::Api(resp) = &err else {
                     return Err(Report::new(err));
@@ -200,20 +236,12 @@ fn log_stream<'a>(
 
                     new_params.previous = false;
 
-                    return log_stream(client, pod, tx, new_params).await;
+                    return container_stream(client, container, new_params).await;
                 }
 
-                return Err(eyre!(err));
+                Err(eyre!(err))
             }
-        };
-
-        while let Some(line) = stream.try_next().await? {
-            tx.send(line)?;
         }
-
-        tracing::debug!(pod = pod.name_any(), "stream ended");
-
-        Ok(())
     }
     .boxed()
 }
