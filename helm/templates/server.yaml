@@ -80,7 +80,7 @@ spec:
       serviceAccountName: kuberift-server
 
       containers:
-        - name: indexify
+        - name: server
           image: {{ include "image" (dict "image" .image "global" $) }}
 
           command: ['kuberift']

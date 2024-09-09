@@ -46,7 +46,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: kuberift-server
-    namespace: kuberift
+    namespace: {{ $.Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: kuberift-server
