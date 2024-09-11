@@ -28,8 +28,8 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: -D warnings
-  IMAGE: ghcr.io/grampelberg/kuberift
-  CACHE: ghcr.io/grampelberg/cache/kuberift
+  IMAGE: ghcr.io/grampelberg/kty
+  CACHE: ghcr.io/grampelberg/cache/kty
 
 jobs:
   build:
@@ -67,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/kuberift.dockerfile
+          file: docker/kty.dockerfile
           platforms: ${{ inputs.os }}/${{ inputs.arch }}
 
           cache-from: type=registry,ref=${{ env.CACHE }}

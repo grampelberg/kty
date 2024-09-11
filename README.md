@@ -1,19 +1,26 @@
-# kuberift
+# kty
 
-SSH into your Kubernetes cluster! kuberift is an SSH server that provides a
-TUI-based dashboard in your cluster. There's no need to manage SSH keys however.
-It works with OpenID providers, such as Github or Google and impersonates users
-to provide them with the same permissions they normally would have - all based
-on the standard RBAC mechanisms.
+SSH into Kubernetes. kty is the easiest way to access resources such as pods on
+your cluster - all without `kubectl`. Once kty is installed on your cluster,
+`ssh` gives you a dashboard to interact with the cluster.
 
 You can:
 
-- Get a shell in running pods - just like you would with SSH normally.
+- Use your Github or Google account to log into the cluster. No more annoying
+  `kubectl` auth plugins.
+- Get a shell running in pods - just like you would when SSH'n into a host
+  normally.
 - Access the logs for running and exited containers in a pod.
-- Forward a local port remotely, allowing access to services and pods in the
-  cluster.
-- Forward a remote service to your local system.
-- `scp` files from pods. sftp clients work as well.
+- Forward traffic from your local machine into the cluster or from the cluster
+  to your local machine.
+- `scp` or `sftp` files from pods.
+- Access the cluster from any device that has an SSH client, from phones to
+  embedded devices.
+
+kty is an SSH server written in rust which provides a TUI-based dashboard that
+maps Kubernetes concepts to SSH. It relies on OpenID providers such as Github or
+Google to verify your identity. Kubernetes RBAC validates access, just like
+`kubectl` does, respecting your organizational policies.
 
 ![demo](./assets/demo.gif)
 
@@ -25,7 +32,7 @@ You can:
 - [Deployment](docs/deployment.md) - Figure out how to get running on your own
   cluster.
 - [Development](DEVELOPMENT.md) - Some tips and tricks for doing development on
-  kuberift itself.
+  kty itself.
 - [Metrics](docs/metrics.md) - List of the possible metrics exported via.
   prometheus.
 
@@ -45,13 +52,13 @@ You can:
    login and the providers available can all be configured.
 
    ```bash
-   kuberift users grant <cluster-role> <email-address>
+   kty users grant <cluster-role> <email-address>
    ```
 
 1. Start the server.
 
    ```bash
-   kuberift --serve
+   kty --serve
    ```
 
 1. SSH into your cluster!
@@ -81,7 +88,7 @@ From this point, here's a few suggestions for things to check out:
 Note: you'll want to install on-cluster to use the tunnelling functionality.
 Check out the [helm](docs/deployment.md#helm) docs for a quick way to do that.
 
-[cli-download]: https://github.com/grampelberg/kuberift/releases
+[cli-download]: https://github.com/grampelberg/kty/releases
 [k3d]: https://k3d.io
 
 ## Interaction
@@ -132,11 +139,11 @@ ssh my-node-username@localhost -p 3333
 
 You can forward a remote service on your cluster to a port on your local host.
 
-To forward port 8080 on service `default/kuberift` to port `9090` on your local
+To forward port 8080 on service `default/kty` to port `9090` on your local
 system, you can run:
 
 ```bash
-ssh me@my-cluster -p 2222 -R default/kuberift:8080:localhost:9090
+ssh me@my-cluster -p 2222 -R default/kty:8080:localhost:9090
 ```
 
 The format for service definitions is `<namespace>/<service-name>`.

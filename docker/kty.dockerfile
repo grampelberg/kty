@@ -30,5 +30,5 @@ RUN apt-get update && apt-get install -y \
     && \
     apt-get clean
 
-COPY --from=builder /app/target/release/kuberift /usr/local/bin
-CMD ["/usr/local/bin/kuberift", "serve", "-vv"]
+COPY --from=builder /app/target/release/kty /usr/local/bin
+CMD ["/usr/local/bin/kty", "serve", "-vv"]

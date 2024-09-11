@@ -55,12 +55,12 @@ jobs:
 
       - name: rename
         run: |-
-          cp target/release/kuberift kuberift-${{ matrix.os }}-${{ matrix.arch }}
+          cp target/release/kty kty-${{ matrix.os }}-${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kuberift-${{ matrix.os }}-${{ matrix.arch }}
-          path: kuberift*
+          name: kty-${{ matrix.os }}-${{ matrix.arch }}
+          path: kty*
           retention-days: 1
 
   # The state of include/exclude in matrices is tough because we want to add the

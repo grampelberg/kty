@@ -4,16 +4,16 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kuberift-server
+  name: kty-server
   labels:
-    {{- include "labels" (dict "name" "kuberift-server" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty-server" "component" "server" "global" $) | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kuberift-server
+  name: kty-server
   labels:
-    {{- include "labels" (dict "name" "kuberift-server" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty-server" "component" "server" "global" $) | nindent 4 }}
 rules:
   - apiGroups: ['']
     resources:
@@ -22,7 +22,7 @@ rules:
     verbs:
       - impersonate
   - apiGroups:
-      - kuberift.com
+      - kty.dev
     resources:
       - keys
       - keys/status
@@ -35,21 +35,21 @@ rules:
       - create
       - patch
     resourceNames:
-      - keys.kuberift.com
+      - keys.kty.dev
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kuberift-server
+  name: kty-server
   labels:
-    {{- include "labels" (dict "name" "kuberift-server" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty-server" "component" "server" "global" $) | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: kuberift-server
+    name: kty-server
     namespace: {{ $.Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: kuberift-server
+  name: kty-server
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
 {{- end }}

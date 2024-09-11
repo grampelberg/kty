@@ -7,5 +7,5 @@ app.kubernetes.io/managed-by: {{ .global.Release.Service }}
 {{- end }}
 
 {{- define "image" -}}
-{{ .image | default (printf "ghcr.io/grampelberg/kuberift:%s" .global.Chart.AppVersion) }}
+{{ .image | default (printf "ghcr.io/grampelberg/kty:%s" .global.Chart.AppVersion) }}
 {{- end }}

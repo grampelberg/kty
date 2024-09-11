@@ -1,7 +1,7 @@
 # Deployment
 
-The `kuberift` server needs access to your cluster's API server and credentials
-to connect to it. There are a couple ways to do this:
+The `kty` server needs access to your cluster's API server and credentials to
+connect to it. There are a couple ways to do this:
 
 - [On cluster](#on-cluster)
 - [Off cluster](#off-cluster)
@@ -25,13 +25,12 @@ All the functionality is controlled via feature flags in the server:
 
 ## Bring Your Own Provider
 
-By default, kuberift provides Github and Google authentication via.
-[auth0][auth0]. To get your own setup using auth0, check out their
-[instructions][auth0-setup].
+By default, kty provides Github and Google authentication via. [auth0][auth0].
+To get your own setup using auth0, check out their [instructions][auth0-setup].
 
 You can, alternatively, use your own provider. It must support the [device
 code][device-code] flow and have a URL that has the openid configuration. Take a
-look at the configuration for `kuberift serve` for the required values.
+look at the configuration for `kty serve` for the required values.
 
 [auth0]: https://auth0.com
 [auth0-setup]:
@@ -52,7 +51,7 @@ using helm, there are some things to be aware of:
   route TCP.
 
 Note: if you're debugging something, instead of setting global verbosity with
-`-vv`, use `RUST_LOG=none,kuberift=debug`. That'll keep other crates that are
+`-vv`, use `RUST_LOG=none,kty=debug`. That'll keep other crates that are
 especially noisy out of the output.
 
 ### Helm
@@ -61,17 +60,17 @@ There is a provided `getting-started.yaml` set of values. To install this on
 your cluster, you can run:
 
 ```bash
-helm install kuberift oci://ghcr.io/grampelberg/helm/kuberift \
-  -n kuberift --create-namespace \
-  --version $(curl -L https://api.github.com/repos/grampelberg/kuberift/tags | jq -r '.[0].name' | cut -c2-) \
-  -f https://raw.githubusercontent.com/grampelberg/kuberift/main/helm/getting-started.yaml
+helm install kty oci://ghcr.io/grampelberg/helm/kty \
+  -n kty --create-namespace \
+  --version $(curl -L https://api.github.com/repos/grampelberg/kty/tags | jq -r '.[0].name' | cut -c2-) \
+  -f https://raw.githubusercontent.com/grampelberg/kty/main/helm/getting-started.yaml
 ```
 
-Note: this exposes the kuberift service externally by default. To get that IP
+Note: this exposes the kty service externally by default. To get that IP
 address, you can run:
 
 ```bash
-kubectl -n kuberift get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
 For more detailed instructions, take a look at the [README][helm-readme].
@@ -80,8 +79,8 @@ For more detailed instructions, take a look at the [README][helm-readme].
 
 ## Off-Cluster
 
-If you're already using jump hosts to get into your cluster, kuberift can run
-there. Here are some things to be aware of:
+If you're already using jump hosts to get into your cluster, kty can run there.
+Here are some things to be aware of:
 
 - Provide credentials by creating a `kubeconfig` that uses the correct service
   account. here are [some plugins][sa-plugin] to make this easy. You'll still
@@ -96,7 +95,7 @@ there. Here are some things to be aware of:
 
 ## Server RBAC
 
-The kuberift server needs to be able to:
+The kty server needs to be able to:
 
 - Impersonate users and groups.
 - Manage `keys`.
@@ -117,7 +116,7 @@ rules:
       - groups
     verbs:
       - impersonate
-    # Restrict the groups/users that can be impersonated through kuberift.
+    # Restrict the groups/users that can be impersonated through kty.
     # resourceNames:
     #   - foo@bar.com
     #   - my_group

@@ -23,7 +23,7 @@ pub use tunnel::Tunnel;
 
 use crate::identity;
 
-pub static MANAGER: &str = "kuberift.com";
+pub static MANAGER: &str = "kkty.dev";
 
 pub(crate) fn all() -> Vec<CustomResourceDefinition> {
     vec![identity::key::Key::crd()]
@@ -43,7 +43,7 @@ pub(crate) async fn create(
                 client
                     .patch(
                         &resource.name_any(),
-                        &PatchParams::apply("kuberift").force(),
+                        &PatchParams::apply("kty").force(),
                         &kube::api::Patch::Apply(&resource),
                     )
                     .await
