@@ -1,15 +1,84 @@
 import React from 'react'
-import { DocsThemeConfig } from 'nextra-theme-docs'
-import { Logo } from 'nextra-logo'
+import { DocsThemeConfig, useConfig } from 'nextra-theme-docs'
+import Image from 'next/image'
+import { useTheme } from 'next-themes'
 
 const config: DocsThemeConfig = {
-  // logo: <Logo dark="/logo-dark.png" light="/logo-light.png" size="200" />,
+  logo: () => {
+    const { resolvedTheme } = useTheme()
+
+    return (
+      <Image
+        src={resolvedTheme == 'dark' ? '/logo-dark.gif' : '/logo-light.gif'}
+        alt="kty"
+        width={64}
+        height={36}
+      />
+    )
+  },
   project: {
     link: 'https://github.com/grampelberg/kty',
   },
   docsRepositoryBase: 'https://github.com/grampelberg/kty',
   footer: {
-    text: 'kty',
+    content: (
+      <span>
+        {new Date().getFullYear()} ©{' '}
+        <a href="https://kty.dev" target="_blank">
+          kty
+        </a>
+      </span>
+    ),
+  },
+  head: () => {
+    const config = useConfig()
+    const title = `${config.title} – kty`
+    const description =
+      config.frontMatter.description || 'kty: Terminal for Kubernetes'
+
+    const image = config.frontMatter.image || '/logo-dark-500x500.png'
+    return (
+      <>
+        <title>{title}</title>
+        <meta property="og:title" content={title} />
+        <meta name="description" content={description} />
+        <meta property="og:description" content={description} />
+        <meta name="og:image" content={image} />
+        <meta name="og:image:alt" content={title} />
+
+        <meta name="msapplication-TileColor" content="#fff" />
+        <meta httpEquiv="Content-Language" content="en" />
+        <meta name="apple-mobile-web-app-title" content="kty" />
+        <meta name="msapplication-TileImage" content={image} />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:site" content="https://kty.dev" />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href="/logo-dark-500x500.png"
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="192x192"
+          href="/logo-dark-500x500.png"
+        />
+        {/* <link
+          rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href="/favicon-32x32.png"
+        /> */}
+        <link rel="icon" type="image/png" sizes="96x96" href="/ico-dark.png" />
+        {/* <link
+          rel="icon"
+          type="image/png"
+          sizes="16x16"
+          href="/favicon-16x16.png"
+        /> */}
+      </>
+    )
   },
 }
 
