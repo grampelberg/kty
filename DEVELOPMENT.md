@@ -38,17 +38,17 @@ want to upload directly to github.
 We recommend using [k3d][k3d] to run a local cluster. To setup:
 
 ```bash
-k3d cluster create kuberift --registry-create kuberift:5432
+k3d cluster create kty --registry-create kty:5432
 ```
 
 Next, you'll want to add the registry to your `/etc/hosts`:
 
 ```bash
-echo "127.0.0.1 kuberift" | sudo tee -a /etc/hosts
+echo "127.0.0.1 kty" | sudo tee -a /etc/hosts
 ```
 
-When you run `just dev-push`, an image at `kuberift:5432/kuberift:latest` will
-be available to run inside the cluster.
+When you run `just dev-push`, an image at `kty:5432/kty:latest` will be
+available to run inside the cluster.
 
 [k3d]: https://k3d.io/v5.6.3/#releases
 
@@ -57,7 +57,7 @@ be available to run inside the cluster.
 The global debug level can be overly noisy. Instead of doing `-vvvv`, try:
 
 ```bash
-RUST_LOG=none,kuberift=debug
+RUST_LOG=none,kty=debug
 ```
 
 ## Ingress Tunnel

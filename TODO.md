@@ -105,7 +105,10 @@
 
 - Figure out why `git cliff` goes `0.2.0` -> `0.2.1` -> `0.3.0` instead of
   `0.2.2`.
-- Move client_id and config_url to a build-time concern.
+- Move client_id and config_url to a build-time concern. I'm not sure this will
+  be great for the development experience. Is there a way to have defaults but
+  override them? Maybe with a dev instance of auth0?
+- Publish to crates.io.
 
 ## Deployment
 

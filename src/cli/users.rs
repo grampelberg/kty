@@ -72,11 +72,11 @@ struct GrantOutput {
 }
 
 /// Grant a role to a user by the provided ID. This will create a
-/// `ClusterRoleBinding` that is named `kuberift-<id>`. If you would like to be
+/// `ClusterRoleBinding` that is named `kty-<id>`. If you would like to be
 /// more granular, check out `kubectl create rolebinding` instead.
 #[derive(Parser, Container)]
 pub struct Grant {
-    /// `ClusterRole` to grant. The `kuberift-ro` role is a good option if
+    /// `ClusterRole` to grant. The `kty-ro` role is a good option if
     /// you're trying things out.
     role: String,
 
@@ -95,7 +95,7 @@ impl Command for Grant {
     async fn run(&self) -> Result<()> {
         let binding = ClusterRoleBinding {
             metadata: ObjectMeta {
-                name: Some(format!("kuberift:{}", self.id).kube_id()?),
+                name: Some(format!("kty:{}", self.id).kube_id()?),
                 ..Default::default()
             },
             role_ref: RoleRef {

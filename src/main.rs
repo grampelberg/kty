@@ -1,4 +1,4 @@
-//! # kuberift
+//! # kty
 
 mod broadcast;
 #[warn(dead_code)]

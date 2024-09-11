@@ -1,6 +1,6 @@
 # Architecture
 
-Kuberift is a standalone SSH server which provides much of the standard SSH
+kty is a standalone SSH server which provides much of the standard SSH
 functionality as if a Kubernetes cluster was a single host. This allows for
 `ssh me@my-cluster` to provide a shell in a running pod, tunneling between
 resources without a VPN and copying files from the cluster. By leveraging OpenID

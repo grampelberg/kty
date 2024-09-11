@@ -1,6 +1,6 @@
 server:
   enabled: true
-  # image: ghcr.io/kuberift/kuberift:latest
+  # image: ghcr.io/kty/kty:latest
   # replicas: 1
 
   # Enable to autoscale the deployment based on CPU utilization
@@ -10,7 +10,7 @@ server:
   # Uncomment to configure your own openid provider.
   # openid:
   #   clientID: fix-me
-  #   configURL: https://kuberift.us.auth0.com/.well-known/openid-configuration
+  #   configURL: https://kty.us.auth0.com/.well-known/openid-configuration
 
   # Make the service a load balancer so that it gets an external IP address if your cluster supports it.
   # loadbalancer: true
