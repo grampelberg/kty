@@ -1,0 +1,6 @@
+# @format
+
+semi: false
+singleQuote: true
+proseWrap: always
+parser: mdx

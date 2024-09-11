@@ -1,18 +1,24 @@
-# Deployment
+import { Callout } from 'nextra/components'
 
-The `kty` server needs access to your cluster's API server and credentials to
-connect to it. There are a couple ways to do this:
+# Installation
+
+You can install kty anywhere that has access to your cluster's API server and
+credentials to connect to it. The easiest way to do this is by running it
+on-cluster and exposing the server via a load balancer.
 
 - [On cluster](#on-cluster)
 - [Off cluster](#off-cluster)
 
 [gateway-api]: https://gateway-api.sigs.k8s.io
-[helm-chart]: #helm
 [sa-plugin]:
   https://github.com/superbrothers/kubectl-view-serviceaccount-kubeconfig-plugin
-[helm-rbac]: helm/templates/rbac.yaml
+[helm-rbac]:
+  https://github.com/grampelberg/kty/blob/main/helm/templates/rbac.yaml
+[helm-chart]: /installation/helm
 
-## Features
+## Configuration
+
+### Features
 
 All the functionality is controlled via feature flags in the server:
 
@@ -23,7 +29,7 @@ All the functionality is controlled via feature flags in the server:
 - `egress-tunnel` - Provides `ssh -R` forwarding from the cluster to a local
   port.
 
-## Bring Your Own Provider
+### Bring Your Own Provider
 
 By default, kty provides Github and Google authentication via. [auth0][auth0].
 To get your own setup using auth0, check out their [instructions][auth0-setup].
@@ -50,37 +56,16 @@ using helm, there are some things to be aware of:
   using the [gateway api][gateway-api] or configuring your ingress controller to
   route TCP.
 
-Note: if you're debugging something, instead of setting global verbosity with
-`-vv`, use `RUST_LOG=none,kty=debug`. That'll keep other crates that are
-especially noisy out of the output.
-
-### Helm
-
-There is a provided `getting-started.yaml` set of values. To install this on
-your cluster, you can run:
-
-```bash
-helm install kty oci://ghcr.io/grampelberg/helm/kty \
-  -n kty --create-namespace \
-  --version $(curl -L https://api.github.com/repos/grampelberg/kty/tags | jq -r '.[0].name' | cut -c2-) \
-  -f https://raw.githubusercontent.com/grampelberg/kty/main/helm/getting-started.yaml
-```
-
-Note: this exposes the kty service externally by default. To get that IP
-address, you can run:
-
-```bash
-kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
-```
-
-For more detailed instructions, take a look at the [README][helm-readme].
-
-[helm-readme]: helm/README.md
+<Callout type="info">
+  If you're debugging something, instead of setting global verbosity with `-vv`,
+  use `RUST_LOG=none,kty=debug`. That'll keep other crates that are especially
+  noisy out of the output.
+</Callout>
 
 ## Off-Cluster
 
-If you're already using jump hosts to get into your cluster, kty can run there.
-Here are some things to be aware of:
+If you're already using jump hosts to get into your cluster, kty can run there
+as well. Here are some things to be aware of:
 
 - Provide credentials by creating a `kubeconfig` that uses the correct service
   account. here are [some plugins][sa-plugin] to make this easy. You'll still

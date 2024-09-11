@@ -1,4 +1,7 @@
-# kty
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/public/logo-dark-github.gif">
+  <img alt="logo" src="./docs/public/logo-light-github.gif">
+</picture>
 
 The terminal for Kubernetes. kty is the easiest way to access resources such as
 pods on your cluster - all without `kubectl`. Once kty is installed on your

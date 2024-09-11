@@ -1,0 +1,34 @@
+import { Callout } from 'nextra/components'
+
+# Helm
+
+There is a provided `getting-started.yaml` set of values. To install this on
+your cluster, you can run:
+
+```bash
+helm install kty oci://ghcr.io/grampelberg/helm/kty \
+  -n kty --create-namespace \
+  --version $(curl -L https://api.github.com/repos/grampelberg/kty/tags | jq -r '.[0].name' | cut -c2-) \
+  -f https://raw.githubusercontent.com/grampelberg/kty/main/helm/getting-started.yaml
+```
+
+Note: this exposes the kty service externally by default. To get that IP
+address, you can run:
+
+```bash
+kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+See the [values.yaml][values.yaml] file for all possible configuration options.
+Some of the things that are configurable out of the box:
+
+- Autoscaling
+- OpenID provider
+- Ingress
+
+<Callout type="warning">
+  If you're trying to install directly from the repository, you'll need to set
+  `server.image` to the correct image as it will try and use a placeholder.
+</Callout>
+
+[values.yaml]: https://github.com/grampelberg/kty/blob/main/helm/values.yaml
