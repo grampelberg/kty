@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export RUST_LOG=none,kuberift=debug
+export RUST_LOG=none,kty=debug
 export LOCAL_REGISTRY="kty:5432"
 
 # export GHCR_USER="me"

@@ -1,0 +1,52 @@
+# Getting Started
+
+1. Download the [cli][cli-download] and add it to your `$PATH`.
+1. Get a k8s cluster. [k3d][k3d] is a convenient way to get a cluster up and
+   running fast. Follow their installation instructions and create a default
+   cluster.
+1. Grant your email address access to the cluster. Choose `cluster-admin` if
+   you'd like something simple to check out how things work. For more details on
+   the minimum possible permissions, read the [Authorization][auth] section. The
+   email address is what you'll be using to authenticate against. It can either
+   be the one associated with a google or github account. Note, the ID used for
+   login and the providers available can all be configured.
+
+   ```bash
+   kty users grant <cluster-role> <email-address>
+   ```
+
+1. Start the server.
+
+   ```bash
+   kty --serve
+   ```
+
+1. SSH into your cluster!
+
+   ```bash
+   ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 me@localhost
+   ```
+
+From this point, here's a few suggestions for things to check out:
+
+- Start a new pod. It'll show up in the dashboard immediately!
+
+- Exec into a pod. Select the pod you want and go to the `Shell` tab. You'll be
+  able to pick the command to exec and then be shell'd into the pod directly.
+
+- Follow the logs. Logs for all containers in a pod are streamed to the `Logs`
+  tab when you've selected a pod from the main list.
+
+- `scp` some files out of a container:
+
+  ```bash
+  scp -P 2222 me@localhost:/default/my-pod/etc/hosts /tmp
+  ```
+
+- Use your own [OpenID provider](docs/deployment.md#bring-your-own-provider).
+
+Note: you'll want to install on-cluster to use the tunnelling functionality.
+Check out the [helm](docs/deployment.md#helm) docs for a quick way to do that.
+
+[cli-download]: https://github.com/grampelberg/kty/releases
+[k3d]: https://k3d.io

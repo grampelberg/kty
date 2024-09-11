@@ -1,0 +1,73 @@
+# Usage
+
+## SSH
+
+To get to the dashboard, you can run:
+
+```bash
+ssh anything@my-remote-host-or-ip -p 2222
+```
+
+The provided username is not used as your identity is authenticated via other
+mechanisms.
+
+## Ingress Tunnel (`ssh -L`)
+
+You can forward requests from a local port into a resource on the remote
+cluster. The supported resources are `nodes`, `pods` and `services`. See the
+[authorization][auth] section for details on required RBAC.
+
+To forward port 9090 on your local system to 80 on the cluster, you can run:
+
+```bash
+ssh me@my-cluster -p 2222 -L 9090:service/default/remote-service:80
+```
+
+The first time 9090 is accessed, a connection will be made. Pay attention to the
+dashboard as any errors establishing this session will be reflected there.
+
+The connection string format is `<resource>/<namespace>/<name>`. As nodes are
+not namespaced, the format is `<resource>/<name>`.
+
+Unlike the API server proxy, this works for any TCP service and is not limited
+to HTTP/HTTPS. For example, you can ssh directly to a node in the cluster with:
+
+```bash
+ssh me@my-cluster -p 2222 -L 3333:no/my-node:22
+```
+
+With that running in one terminal, you can run this in another:
+
+```bash
+ssh my-node-username@localhost -p 3333
+```
+
+## Egress Tunnel (`ssh -R`)
+
+You can forward a remote service on your cluster to a port on your local host.
+
+To forward port 8080 on service `default/kty` to port `9090` on your local
+system, you can run:
+
+```bash
+ssh me@my-cluster -p 2222 -R default/kty:8080:localhost:9090
+```
+
+The format for service definitions is `<namespace>/<service-name>`.
+
+## SFTP
+
+The cluster is represented by a file tree:
+
+```bash
+/<namespace>/<pod-name>/<container-name>/<file-path>
+```
+
+For the `nginx` pod running in `default`, you would do something like:
+
+```bash
+scp -P 2222 me@localhost:/default/nginx/nginx/etc/hosts /tmp
+```
+
+It can be a little easier to navigate all this with an sftp client as that'll
+render the file tree natively for you.
