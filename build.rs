@@ -1,4 +1,4 @@
-//! Build script for kuberift.
+//! Build script for kty.
 
 static PH_VAR: &str = "POSTHOG_API_KEY";
 

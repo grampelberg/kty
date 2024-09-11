@@ -1,6 +1,12 @@
 #!/bin/bash
 
-export LOCAL_REGISTRY="kuberift:5432"
+export RUST_LOG=none,kuberift=debug
+export LOCAL_REGISTRY="kty:5432"
 
-export GHCR_USER="me"
-export GHCR_TOKEN="token"
+# export GHCR_USER="me"
+# export GHCR_TOKEN="token"
+
+# Egress Tunnel
+# export HOSTNAME="nginx-deployment-65fcddc477-7hbsr"
+# export POD_UID="bb907585-5a0e-4920-b789-7d23aa31113e"
+# export POD_IP="198.19.248.254"

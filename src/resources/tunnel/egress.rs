@@ -24,8 +24,8 @@ use crate::{
     resources::{pod::PodExt, tunnel, MANAGER},
 };
 
-static HOST_LABEL: &str = "egress.kuberift.com/host";
-static IDENTITY_LABEL: &str = "egress.kuberift.com/identity";
+static HOST_LABEL: &str = "egress.kty.dev/host";
+static IDENTITY_LABEL: &str = "egress.kty.dev/identity";
 
 #[derive(Builder)]
 #[builder(pattern = "owned")]
@@ -151,7 +151,7 @@ impl Egress {
         metadata.labels.get_or_insert(BTreeMap::new()).extend([
             (
                 "endpointslice.kubernetes.io/managed-by".to_string(),
-                "egress.kuberift.com".to_string(),
+                "egress.kty.dev".to_string(),
             ),
             ("kubernetes.io/service-name".to_string(), self.name_any()),
         ]);

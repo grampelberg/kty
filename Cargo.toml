@@ -1,8 +1,9 @@
 [package]
-name = "kuberift"
+name = "kty"
 version.workspace = true
 authors.workspace = true
-description = "SSH into a Kubernetes cluster"
+description = "SSH into Kubernetes"
+homepage.workspace = true
 documentation.workspace = true
 license-file.workspace = true
 edition.workspace = true
@@ -13,12 +14,13 @@ categories.workspace = true
 [workspace.package]
 version = "0.0.0-UNSTABLE"
 authors = ["Thomas Rampelberg <thomas@saunter.org>"]
-documentation = "https://github.com/grampelberg/kubrift"
+homepage = "https://kty.dev"
+documentation = "https://kty.dev"
 edition = "2021"
 license-file = "LICENSE"
-repository = "https://github.com/grampelberg/kuberift"
+repository = "https://github.com/grampelberg/kty"
 keywords = ["cli", "kubernetes", "ssh", "tui", "terminal"]
-categories = ["command-line-interface"]
+categories = ["command-line-interface", "development-tools", "virtualization"]
 
 [dependencies]
 ansi-to-tui = "6.0.0"

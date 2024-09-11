@@ -15,7 +15,7 @@ version_placeholder := "0.0.0-UNSTABLE"
 # Docker settings
 
 registry := "ghcr.io/grampelberg"
-image_name := "kuberift"
+image_name := "kty"
 tag := "sha-" + git_version
 image := registry + "/" + image_name + ":" + tag
 
@@ -35,10 +35,10 @@ lint:
     cargo clippy --no-deps
 
 build-binary:
-    cargo build --release --bin kuberift
+    cargo build --release --bin kty
 
 build-image:
-    docker build -t {{ image }} -f docker/kuberift.dockerfile .
+    docker build -t {{ image }} -f docker/kty.dockerfile .
 
 login-ghcr:
     @if [ -z ${GHCR_USER+x} ] || [ -z ${GHCR_TOKEN+x} ]; then \
@@ -63,11 +63,11 @@ extract-from-digests:
         sha="$(basename "${digest}")"
         bucket="$(basename $(dirname "${digest}"))"
         IFS=- read -r _ os arch <<< "${bucket}"
-        name="kuberift-${os}-${arch}"
+        name="kty-${os}-${arch}"
         echo "Extracting {{ image }}@sha256:${sha}"
 
         container_id="$(docker create --platform=${os}/${arch} {{ image }}@sha256:${sha})"
-        docker cp "${container_id}:/usr/local/bin/kuberift" "/tmp/bins/${name}"
+        docker cp "${container_id}:/usr/local/bin/kty" "/tmp/bins/${name}"
         docker rm "${container_id}"
     done
 

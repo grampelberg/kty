@@ -7,7 +7,7 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: server
   labels:
-    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -28,11 +28,11 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: kuberift-server
+  name: kty-server
   labels:
-    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 4 }}
 data:
-  {{- $old_sec := lookup "v1" "Secret" $.Release.Namespace "kuberift-server" }}
+  {{- $old_sec := lookup "v1" "Secret" $.Release.Namespace "kty-server" }}
 
   {{- if or (not $old_sec) (not $old_sec.data) }}
   id_ed25519: {{ genPrivateKey "ed25519" | b64enc }}
@@ -54,41 +54,41 @@ spec:
   ports:
     - port: 2222
   selector:
-    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: server
   labels:
-    {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 4 }}
+    {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 4 }}
 spec:
   replicas: {{ .replicas | default 1 }}
   selector:
     matchLabels:
-      {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 6 }}
+      {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "labels" (dict "name" "kuberift" "component" "server" "global" $) | nindent 8 }}
+        {{- include "labels" (dict "name" "kty" "component" "server" "global" $) | nindent 8 }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: "8080"
 
     spec:
-      serviceAccountName: kuberift-server
+      serviceAccountName: kty-server
 
       containers:
         - name: server
           image: {{ include "image" (dict "image" .image "global" $) }}
 
-          command: ['kuberift']
+          command: ['kty']
           args:
             - serve
             - -vv
             - --address=0.0.0.0
-            - --key=/etc/kuberift/key/id_ed25519
+            - --key=/etc/kty/key/id_ed25519
 
           env:
             - name: POD_UID
@@ -96,9 +96,9 @@ spec:
                 fieldRef:
                   fieldPath: metadata.uid
           {{- with .openid -}}
-            - name: KUBERIFT_CLIENT_ID
+            - name: KTY_CLIENT_ID
               value: {{ .clientID }}
-            - name: KUBERIFT_OID_CONFIG_URL
+            - name: KTY_OID_CONFIG_URL
               value: {{ .configURL }}
           {{- end }}
 
@@ -117,13 +117,13 @@ spec:
               port: 8080
 
           volumeMounts:
-            - mountPath: /etc/kuberift/key
+            - mountPath: /etc/kty/key
               name: host-key
               readOnly: true
 
       volumes:
         - name: host-key
           secret:
-            secretName: kuberift-server
+            secretName: kty-server
 {{- end }}
 {{- end }}

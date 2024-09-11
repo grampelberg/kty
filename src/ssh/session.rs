@@ -136,7 +136,7 @@ impl Session {
         AUTH_RESULTS.interactive.partial.inc();
 
         Ok(Auth::Partial {
-            name: Cow::Borrowed("Welcome to KubeRift"),
+            name: Cow::Borrowed("Welcome to kty"),
             instructions: Cow::Owned(instructions),
             prompts: Cow::Owned(vec![(Cow::Owned(prompt), false)]),
         })

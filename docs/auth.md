@@ -1,12 +1,12 @@
 # Authentication and Authorization
 
-Kuberift utilizes external systems for both authn and authz. To fetch your
-identity, a combo of OpenID and the `keys` resource in your cluster are used.
-These map from something external (an oauth identity token or a public key hash)
-to a `User` and `Group` inside of k8s.
+kty utilizes external systems for both authn and authz. To fetch your identity,
+a combo of OpenID and the `keys` resource in your cluster are used. These map
+from something external (an oauth identity token or a public key hash) to a
+`User` and `Group` inside of k8s.
 
-Similar to authentication, Kuberift does not do authorization itself. Instead,
-it [impersonates][impersonate] the authenticated user. Any action that is taken
+Similar to authentication, kty does not do authorization itself. Instead, it
+[impersonates][impersonate] the authenticated user. Any action that is taken
 from that point forward uses the users' permissions as granted via. RBAC in k8s.
 
 [impersonate]:
@@ -50,22 +50,21 @@ There are two ways for an incoming SSH session to get a user identity:
 - Public Key - By default, once a user has been authenticated with openid, they
   will have a public key. This will contain the user and group information
   extracted from the identity token. If you would like to skip OpenID entirely,
-  you can create `Key` resources, the `kuberift users key` can be used to do
-  this as an alternative to `kubectl`.
+  you can create `Key` resources, the `kty users key` can be used to do this as
+  an alternative to `kubectl`.
 
-To validate that a user has access, you can use the `kuberift users check`
-command. This is a great way to debug why users are not being allowed to
-connect.
+To validate that a user has access, you can use the `kty users check` command.
+This is a great way to debug why users are not being allowed to connect.
 
 ```bash
-kuberift users check foo@bar.com
+kty users check foo@bar.com
 ```
 
 ## Authorization
 
 To be authorized, either the name or groups for a user need to have role
-bindings added to the cluster. The `kuberift users grant` command is one way to
-go about this, but it is purposely naive. To do something more flexible, you can
+bindings added to the cluster. The `kty users grant` command is one way to go
+about this, but it is purposely naive. To do something more flexible, you can
 check out `kubectl`:
 
 ```bash

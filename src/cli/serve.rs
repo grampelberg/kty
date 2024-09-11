@@ -18,10 +18,10 @@ use crate::{
     ssh::{self, ControllerBuilder, CurrentPodBuilder, Features},
 };
 
-static CLIENT_ID: &str = "P3g7SKU42Wi4Z86FnNDqfiRtQRYgWsqx";
-static OID_CONFIG_URL: &str = "https://kuberift.us.auth0.com/.well-known/openid-configuration";
+static CLIENT_ID: &str = "y2KACghcNrpTlB1Q10h3MYwYYmiMShPD";
+static OID_CONFIG_URL: &str = "https://kty.us.auth0.com/.well-known/openid-configuration";
 
-static CONTROLLER_NAME: &str = "ssh.kuberift.com";
+static CONTROLLER_NAME: &str = "ssh.kty.dev";
 
 #[derive(Parser, Container)]
 pub struct Serve {
@@ -29,11 +29,11 @@ pub struct Serve {
     #[clap(long, default_value = "1hr")]
     inactivity_timeout: humantime::Duration,
     /// Client ID for the `OpenID` provider that will be used.
-    #[clap(long, default_value = CLIENT_ID, env = "KUBERIFT_CLIENT_ID")]
+    #[clap(long, default_value = CLIENT_ID, env = "KTY_CLIENT_ID")]
     client_id: String,
     /// URL to the `OpenID` configuration. This is how the server knows what
     /// endpoints to use and how to validate tokens.
-    #[clap(long, default_value = OID_CONFIG_URL, env = "KUBERIFT_OID_CONFIG_URL")]
+    #[clap(long, default_value = OID_CONFIG_URL, env = "KTY_OID_CONFIG_URL")]
     openid_configuration: String,
     /// Claim of the `id_token` to use as the user's ID.
     #[clap(long, default_value = "email")]

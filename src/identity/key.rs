@@ -20,7 +20,7 @@ use crate::{
 #[allow(clippy::module_name_repetitions)]
 #[derive(CustomResource, Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[kube(
-    group = "kuberift.com",
+    group = "kty.dev",
     version = "v1alpha1",
     kind = "Key",
     namespaced,

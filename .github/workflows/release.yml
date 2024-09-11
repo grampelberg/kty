@@ -8,7 +8,7 @@ on:
       - v*
 
 env:
-  IMAGE: ghcr.io/grampelberg/kuberift
+  IMAGE: ghcr.io/grampelberg/kty
 
 concurrency:
   group: |-
@@ -88,7 +88,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ github.event_name != 'pull_request' }}
         with:
-          name: kuberift-docker-binaries
+          name: kty-docker-binaries
           path: /tmp/bins/*
           retention-days: 1
 
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/binaries
-          pattern: kuberift-*
+          pattern: kty-*
           merge-multiple: true
 
       - uses: actions/download-artifact@v4
