@@ -88,7 +88,7 @@ impl Widget for TabbedView {
         };
 
         match key {
-            Keypress::CursorLeft => self.scroll(self.idx.saturating_sub(1)),
+            Keypress::CursorLeft => self.scroll(self.idx.wrapping_sub(1)),
             Keypress::CursorRight => self.scroll(self.idx.saturating_add(1)),
             _ => return Ok(Broadcast::Ignored),
         }

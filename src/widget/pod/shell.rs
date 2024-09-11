@@ -25,13 +25,7 @@ use crate::{
         pod::PodExt,
         status::StatusExt,
     },
-    widget::{
-        input::Text,
-        propagate,
-        table::{DetailFn, Table},
-        tabs::Tab,
-        Raw, Widget, WIDGET_VIEWS,
-    },
+    widget::{input, input::ContentExt, propagate, table, tabs::Tab, Raw, Widget, WIDGET_VIEWS},
 };
 
 lazy_static! {
@@ -44,50 +38,56 @@ lazy_static! {
 }
 
 pub struct Shell {
-    pod: Arc<Pod>,
-    table: Table,
+    view: table::Filtered<Arc<Pod>>,
 }
 
+#[bon::bon]
 impl Shell {
+    #[builder]
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.container.list.inc();
 
-        let mut table = Table::builder()
-            .constructor(Command::from_pod(client, pod.clone()))
+        let len = pod.as_ref().containers(None).len();
+
+        let mut view = table::Filtered::builder()
+            .table(table::Table::builder().items(pod.clone()).build())
+            .constructor(Command::from_pod(client, pod))
             .build();
 
-        if pod.as_ref().containers(None).len() == 1 {
-            let _unused = table.enter(0, None);
+        if len == 1 {
+            view.select(0).expect("can select");
         }
 
-        Self { pod, table }
+        Self { view }
     }
 
     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
         Tab::new(
             name,
-            Box::new(move || Box::new(Self::new(client.clone(), pod.clone()))),
+            Box::new(move || {
+                Box::new(
+                    Self::builder()
+                        .client(client.clone())
+                        .pod(pod.clone())
+                        .build(),
+                )
+            }),
         )
     }
 }
 
 impl Widget for Shell {
-    // TODO: handle raw and close the detail view.
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        self.table.dispatch(event)
+        self.view.dispatch(event)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        if let Err(err) = self.table.draw(frame, area, &self.pod) {
-            tracing::error!("failed to draw table: {}", err);
-        }
-
-        Ok(())
+        self.view.draw(frame, area)
     }
 }
 
 enum CommandState {
-    Input(Text),
+    Input(input::Text),
     Attached,
 }
 
@@ -115,13 +115,14 @@ impl Command {
         }
     }
 
-    fn input(container: &Container) -> Text {
-        Text::default()
-            .with_title(container.name_any().as_str())
-            .with_content(COMMAND)
+    fn input(container: &Container) -> input::Text {
+        input::Text::builder()
+            .title(container.name_any())
+            .content(input::Content::from_string(COMMAND))
+            .build()
     }
 
-    pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> DetailFn {
+    pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> table::DetailFn {
         Box::new(move |idx, filter| {
             let containers = pod.containers(filter);
 
@@ -134,15 +135,17 @@ impl Command {
     }
 
     fn dispatch_input(&mut self, event: &Event) -> Result<Broadcast> {
-        let cmd = {
-            let CommandState::Input(ref mut txt) = self.state else {
-                return Ok(Broadcast::Ignored);
-            };
-
-            propagate!(txt.dispatch(event));
-
-            txt.content().to_string()
+        let CommandState::Input(ref mut txt) = self.state else {
+            return Ok(Broadcast::Ignored);
         };
+
+        propagate!(txt.dispatch(event));
+
+        let cmd = txt
+            .content()
+            .borrow()
+            .as_ref()
+            .map_or(String::new(), String::clone);
 
         match event.key() {
             Some(Keypress::Enter) => {
@@ -206,6 +209,10 @@ impl Widget for Command {
         }
 
         Ok(())
+    }
+
+    fn zindex(&self) -> u16 {
+        1
     }
 }
 

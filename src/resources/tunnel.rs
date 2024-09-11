@@ -17,7 +17,7 @@ use prometheus_static_metric::make_static_metric;
 use ratatui::{layout::Constraint, widgets::Row};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::widget::{table::RowStyle, TableRow};
+use crate::widget::table;
 
 make_static_metric! {
     pub struct ResourceVec: IntCounter {
@@ -141,7 +141,19 @@ impl PartialEq for Tunnel {
 
 impl Eq for Tunnel {}
 
-impl<'a> TableRow<'a> for Tunnel {
+impl PartialOrd for Tunnel {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Tunnel {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.addr().cmp(&other.addr())
+    }
+}
+
+impl table::Row for Tunnel {
     fn constraints() -> Vec<Constraint> {
         vec![
             Constraint::Length(10),
@@ -150,7 +162,7 @@ impl<'a> TableRow<'a> for Tunnel {
         ]
     }
 
-    fn row(&self, style: &RowStyle) -> Row {
+    fn row(&self, style: &table::RowStyle) -> Row {
         Row::new(vec![
             self.kind.to_string().to_lowercase(),
             format!("{}:{}", self.host, self.port),

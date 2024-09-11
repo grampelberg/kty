@@ -2,7 +2,7 @@ use eyre::Result;
 use tachyonfx::{fx, Effect, EffectTimer, Interpolation};
 use tracing::{metadata::LevelFilter, Level};
 
-use super::{debug::Debug, error::Error, pod, tunnel::Tunnel, Container, ResetEffect, Widget};
+use super::{debug::Debug, error::Error, pod, tunnel::Tunnel, Bundle, ResetEffect, Widget};
 use crate::events::{Broadcast, Event};
 
 pub struct Apex {
@@ -31,7 +31,11 @@ impl Apex {
     }
 }
 
-impl Container for Apex {
+impl Bundle for Apex {
+    fn show_all(&self) -> bool {
+        true
+    }
+
     fn effects(&mut self) -> &mut Vec<Effect> {
         &mut self.effects
     }
@@ -39,13 +43,19 @@ impl Container for Apex {
     fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>> {
         &mut self.widgets
     }
+}
 
+impl Widget for Apex {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
         if let Event::Tunnel(Err(err)) = event {
             self.widgets.push(Error::from(err.message()).boxed());
             self.effects.reset();
         }
 
-        Ok(Broadcast::Ignored)
+        self.dispatch_children(event)
+    }
+
+    fn draw(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect) -> Result<()> {
+        Bundle::draw(self, frame, area)
     }
 }

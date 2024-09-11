@@ -353,9 +353,9 @@ dependencies = [
 
 [[package]]
 name = "bon"
-version = "2.1.1"
+version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1fa7e488fcdc4688b7872e6fdf3d6a8ecbf2611621fee099bdb953f160eec2e"
+checksum = "ee4f37d875011af3196e4828024742a84dcff6b0d027d272f2944f9a99f2c8af"
 dependencies = [
  "bon-macros",
  "rustversion",
@@ -363,9 +363,9 @@ dependencies = [
 
 [[package]]
 name = "bon-macros"
-version = "2.1.1"
+version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7839989c32a79e473193cbc65e5750d6bf7e41fe75afa24b41728ee66a57b283"
+checksum = "99b4b686e7ebf76cfa591052482d8c3c8242722518560798631974bf899d5565"
 dependencies = [
  "darling",
  "ident_case",
@@ -1900,9 +1900,9 @@ dependencies = [
 
 [[package]]
 name = "kube"
-version = "0.93.1"
+version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0365920075af1a2d23619c1ca801c492f2400157de42627f041a061716e76416"
+checksum = "8be507d4aad98648b68e0857909332e2ef791befd4fd7b0076662831575417ea"
 dependencies = [
  "k8s-openapi",
  "kube-client",
@@ -1913,9 +1913,9 @@ dependencies = [
 
 [[package]]
 name = "kube-client"
-version = "0.93.1"
+version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d81336eb3a5b10a40c97a5a97ad66622e92bad942ce05ee789edd730aa4f8603"
+checksum = "a153c7ec9f08a2008e27284c60f7b4dd4f493053868cbe919a0db639a68ee421"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1953,9 +1953,9 @@ dependencies = [
 
 [[package]]
 name = "kube-core"
-version = "0.93.1"
+version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cce373a74d787d439063cdefab0f3672860bd7bac01a38e39019177e764a0fe6"
+checksum = "755a2f40ef78d317bde7829c7fc1f9d5b28b1233dfdebb0a9eeb7f738ba23bae"
 dependencies = [
  "chrono",
  "form_urlencoded",
@@ -1964,15 +1964,16 @@ dependencies = [
  "k8s-openapi",
  "schemars",
  "serde",
+ "serde-value",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
 name = "kube-derive"
-version = "0.93.1"
+version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04a26c9844791e127329be5dce9298b03f9e2ff5939076d5438c92dea5eb78f2"
+checksum = "ff83a9cdcf99dde68acd595658af4649eaed0933cae4235a0a33c52d2a5fe523"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1983,9 +1984,9 @@ dependencies = [
 
 [[package]]
 name = "kube-runtime"
-version = "0.93.1"
+version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b84733c0fed6085c9210b43ffb96248676c1e800d0ba38d15043275a792ffa4"
+checksum = "7648b57fa599486132d065f09fcae0d7ea624fe48725c6627ef1d7ed07a1c3b6"
 dependencies = [
  "ahash",
  "async-broadcast",
@@ -3919,8 +3920,9 @@ dependencies = [
 
 [[package]]
 name = "syntect-tui"
-version = "3.0.3"
-source = "git+https://github.com/grampelberg/syntect-tui.git?branch=ratatui-0.28.1#386d627bae08cd247ff0c95b6edfa8706c545b82"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b14cbbd0345337ed85f42ca4b7ad3a18be039b9bad5499d1fb96a57147ab0bf"
 dependencies = [
  "custom_error",
  "ratatui",

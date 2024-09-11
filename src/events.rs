@@ -11,7 +11,12 @@ pub enum Broadcast {
     Consumed,
     Ignored,
     Exited,
+    // Switch to raw mode - where input is passed directly to a single widget.
     Raw(Box<dyn Raw>),
+    // Allows a child component to communicate to a parent that there was a selection event which
+    // occurred in it. The parent is expected to handle this as part of propagating the dispatch
+    // back to the apex.
+    Selected(usize),
 }
 
 #[derive(Debug, Clone)]

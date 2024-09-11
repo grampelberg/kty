@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use eyre::Result;
 use ratatui::{
@@ -6,37 +6,39 @@ use ratatui::{
     Frame,
 };
 
-use super::{
-    table::{Content, Table},
-    Placement, Widget,
-};
+use super::{table, Placement, Widget};
 use crate::{
     events::{Broadcast, Event},
     resources,
-    widget::TableRow,
 };
 
 pub struct Tunnel {
-    items: HashMap<resources::Tunnel, resources::Tunnel>,
-    table: Table,
+    items: Rc<RefCell<BTreeMap<resources::Tunnel, resources::Tunnel>>>,
+    table: table::Table<Rc<RefCell<BTreeMap<resources::Tunnel, resources::Tunnel>>>>,
 }
 
 impl Default for Tunnel {
     fn default() -> Self {
+        let items = Rc::new(RefCell::new(BTreeMap::new()));
+
         Self {
-            items: HashMap::new(),
-            table: Table::builder().title("Tunnels").no_highlight(true).build(),
+            items: items.clone(),
+            table: table::Table::builder()
+                .title("Tunnels")
+                .highlight(false)
+                .items(items)
+                .build(),
         }
     }
 }
 
 impl Tunnel {
     pub fn height(&self) -> u16 {
-        if self.items.is_empty() {
+        if self.items.borrow().is_empty() {
             return 0;
         }
 
-        u16::try_from(self.items.len())
+        u16::try_from(self.items.borrow().len())
             .expect("no truncation")
             .saturating_add(2)
     }
@@ -48,12 +50,12 @@ impl Widget for Tunnel {
             Event::Tunnel(Err(err)) => {
                 let tun = err.tunnel.clone().into_error();
 
-                self.items.insert(tun.clone(), tun);
+                self.items.try_borrow_mut()?.insert(tun.clone(), tun);
 
                 Broadcast::Ignored
             }
             Event::Tunnel(Ok(ev)) => {
-                self.items.insert(ev.clone(), ev.clone());
+                self.items.try_borrow_mut()?.insert(ev.clone(), ev.clone());
 
                 Broadcast::Consumed
             }
@@ -62,16 +64,11 @@ impl Widget for Tunnel {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        if self.items.is_empty() {
+        if self.items.try_borrow_mut()?.is_empty() {
             return Ok(());
         }
 
-        self.table
-            .draw::<HashMap<resources::Tunnel, resources::Tunnel>, resources::Tunnel>(
-                frame,
-                area,
-                &self.items,
-            )
+        self.table.draw(frame, area)
     }
 
     fn placement(&self) -> Placement {
@@ -82,11 +79,10 @@ impl Widget for Tunnel {
     }
 }
 
-impl<'a, K> Content<'a, K> for HashMap<resources::Tunnel, resources::Tunnel>
-where
-    K: TableRow<'a>,
-{
-    fn items(&self, _: Option<String>) -> Vec<impl TableRow<'a>> {
-        self.iter().map(|(_, v)| v.clone()).collect()
+impl table::Items for Rc<RefCell<BTreeMap<resources::Tunnel, resources::Tunnel>>> {
+    type Item = resources::Tunnel;
+
+    fn items(&self, _: Option<String>) -> Vec<resources::Tunnel> {
+        self.borrow().iter().map(|(_, v)| v.clone()).collect()
     }
 }
