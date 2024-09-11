@@ -80,3 +80,6 @@ helm-build:
 helm-upload token="GITHUB_TOKEN":
     echo "{{ "${" }}{{ token }}}" | helm registry login {{ registry }} -u gha --password-stdin
     helm push /tmp/chart/*.tgz oci://{{ registry }}/helm
+
+docs:
+    cd docs &&
