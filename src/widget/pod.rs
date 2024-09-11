@@ -10,16 +10,11 @@ use ratatui::{
     prelude::*,
     style::{Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
 use super::{
-    loading::Loading,
-    log::Log,
-    propagate,
-    table::{DetailFn, Table},
-    tabs::TabbedView,
-    Placement, Widget, WIDGET_VIEWS,
+    loading::Loading, log::Log, propagate, table, tabs::TabbedView, Placement, Widget, WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -29,9 +24,7 @@ use crate::{
 
 pub struct List {
     pods: Arc<Store<Pod>>,
-    table: Table,
-
-    route: Vec<String>,
+    view: table::Filtered<Arc<Store<Pod>>>,
 }
 
 impl List {
@@ -41,28 +34,24 @@ impl List {
         WIDGET_VIEWS.pod.list.inc();
 
         let pods = Arc::new(Store::new(client.clone()));
+        let table = table::Table::builder()
+            .title("Pods")
+            .items(pods.clone())
+            .build();
 
         Self {
             pods: pods.clone(),
-            table: Table::builder()
-                .title("Pods")
-                .constructor(Detail::from_store(client, pods.clone()))
+            view: table::Filtered::builder()
+                .table(table)
+                .constructor(Detail::from_store(client, pods))
                 .build(),
-
-            route: Vec::new(),
         }
     }
 }
 
 impl Widget for List {
     fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        if let Event::Goto(route) = event {
-            self.route.clone_from(route);
-
-            return Ok(Broadcast::Consumed);
-        }
-
-        propagate!(self.table.dispatch(event));
+        propagate!(self.view.dispatch(event));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
@@ -78,22 +67,7 @@ impl Widget for List {
             return Ok(());
         }
 
-        if !self.route.is_empty() {
-            let route = self.route.clone();
-
-            if let Err(e) = self.table.dispatch(&Event::Goto(route)) {
-                frame.render_widget(
-                    Paragraph::new(e.to_string()).block(Block::default().borders(Borders::ALL)),
-                    area,
-                );
-
-                return Ok(());
-            }
-
-            self.route.clear();
-        }
-
-        self.table.draw(frame, area, &self.pods)
+        self.view.draw(frame, area)
     }
 
     fn placement(&self) -> Placement {
@@ -136,7 +110,7 @@ impl Detail {
         Self { pod, view }
     }
 
-    pub fn from_store(client: kube::Client, pods: Arc<Store<Pod>>) -> DetailFn {
+    pub fn from_store(client: kube::Client, pods: Arc<Store<Pod>>) -> table::DetailFn {
         Box::new(move |idx, filter| {
             let pod = pods
                 .get(idx, filter)
@@ -183,5 +157,9 @@ impl Widget for Detail {
         frame.render_widget(block, area);
 
         self.view.draw(frame, inner)
+    }
+
+    fn zindex(&self) -> u16 {
+        1
     }
 }

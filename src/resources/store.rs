@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use tokio::task::JoinHandle;
 
 use super::{Compare, Filter};
-use crate::widget::{table, TableRow};
+use crate::widget::table;
 
 async fn is_ready<K>(reader: reflector::Store<K>) -> Result<(), WriterDropped>
 where
@@ -124,7 +124,7 @@ where
     }
 }
 
-impl<'a, K> table::Content<'a, Arc<K>> for Arc<Store<K>>
+impl<K> table::Items for Arc<Store<K>>
 where
     K: Filter
         + kube::Resource<DynamicType = ()>
@@ -134,9 +134,11 @@ where
         + Sync
         + DeserializeOwned
         + 'static,
-    Arc<K>: TableRow<'a> + Compare,
+    Arc<K>: table::Row + Compare,
 {
-    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
+    type Item = Arc<K>;
+
+    fn items(&self, filter: Option<String>) -> Vec<Self::Item> {
         Store::items(self, filter)
     }
 }

@@ -19,10 +19,7 @@ use super::{
     container::{Container, ContainerExt},
     Compare, Filter,
 };
-use crate::widget::{
-    table::{Content, RowStyle},
-    TableRow,
-};
+use crate::widget::table;
 
 pub enum Phase {
     Pending,
@@ -227,8 +224,8 @@ impl PodExt for Pod {
     }
 }
 
-impl<'a> TableRow<'a> for Arc<Pod> {
-    fn header() -> Option<Row<'a>> {
+impl table::Row for Arc<Pod> {
+    fn header<'a>() -> Option<Row<'a>> {
         Some(Row::new(vec![
             Cell::from("Namespace"),
             Cell::from("Name"),
@@ -250,7 +247,7 @@ impl<'a> TableRow<'a> for Arc<Pod> {
         ]
     }
 
-    fn row(&self, style: &RowStyle) -> Row {
+    fn row(&self, style: &table::RowStyle) -> Row {
         Row::new(vec![
             self.namespace().unwrap_or_default(),
             self.name_any(),
@@ -288,8 +285,10 @@ impl Compare for Arc<Pod> {
     }
 }
 
-impl<'a> Content<'a, Container> for Arc<Pod> {
-    fn items(&self, filter: Option<String>) -> Vec<impl TableRow<'a>> {
+impl table::Items for Arc<Pod> {
+    type Item = Container;
+
+    fn items(&self, filter: Option<String>) -> Vec<Self::Item> {
         self.containers(filter)
     }
 }

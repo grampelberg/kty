@@ -90,4 +90,8 @@ impl Widget for Debug {
 
         Ok(())
     }
+
+    fn zindex(&self) -> u16 {
+        1
+    }
 }
