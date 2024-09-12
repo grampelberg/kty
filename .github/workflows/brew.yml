@@ -1,0 +1,33 @@
+name: homebrew-releaser
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  homebrew-releaser:
+    runs-on: ubuntu-latest
+    name: homebrew-releaser
+    steps:
+      - name: publish tap
+        uses: Justintime50/homebrew-releaser@v1
+        with:
+          homebrew_owner: grampelberg
+          homebrew_tap: homebrew-kty
+          github_token: ${{ secrets.BREW_TOKEN }}
+
+          commit_owner: Thomas Rampelberg
+          commit_email: thomas@saunter.org
+
+          install: 'bin.install "kty" => "kty"'
+          test: 'assert_match("kty", shell_output("kty"))'
+
+          target_darwin_amd64: false
+          target_darwin_arm64: true
+          target_linux_amd64: true
+          target_linux_arm64: true
+
+          update_readme_table: true
+          skip_commit: false
+
+          debug: true

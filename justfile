@@ -40,6 +40,9 @@ build-binary:
 build-image:
     docker build -t {{ image }} -f docker/kty.dockerfile .
 
+tar-bin os arch:
+    tar -czf kty-{{ version }}-{{ os }}-{{ arch }}.tar.gz -C target/release kty
+
 login-ghcr:
     @if [ -z ${GHCR_USER+x} ] || [ -z ${GHCR_TOKEN+x} ]; then \
         echo "{{ red }}GHCR_USER and/or GHCR_TOKEN is not set.{{ normal }} See .envrc.example" && exit 1; \
@@ -67,9 +70,13 @@ extract-from-digests:
         echo "Extracting {{ image }}@sha256:${sha}"
 
         container_id="$(docker create --platform=${os}/${arch} {{ image }}@sha256:${sha})"
-        docker cp "${container_id}:/usr/local/bin/kty" "/tmp/bins/${name}"
+        docker cp "${container_id}:/usr/local/bin/kty" "/tmp/bins/kty"
         docker rm "${container_id}"
+
+        tar -czf "/tmp/bins/kty-{{ version }}-${os}-${arch}.tar.gz" -C /tmp/bins kty
     done
+
+    rm /tmp/bins/kty
 
 set-version:
     git grep -l "{{ version_placeholder }}" | grep -v "justfile" | xargs -I {} sed -i'.tmp' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
