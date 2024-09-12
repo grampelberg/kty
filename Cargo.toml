@@ -25,6 +25,7 @@ categories = ["command-line-interface", "development-tools", "virtualization"]
 [dependencies]
 ansi-to-tui = "6.0.0"
 async-trait = "0.1.82"
+base64 = "0.22.1"
 bon = "2.2.1"
 cata = { version = "0.1.1" }
 chrono = { version = "0.4.38", features = ["serde"] }
@@ -37,13 +38,13 @@ crossterm = { version = "0.28.1", default-features = false, features = [
     "events",
 ] }
 derive_builder = { version = "0.20.1", features = ["clippy"] }
-either = "1.13.0"
 eyre = "0.6.12"
 fast_qr = "0.12.5"
 futures = "0.3.30"
 hostname = "0.4.0"
 humantime = "2.1.0"
 itertools = "0.13.0"
+json-patch = "2.0.0"
 json_value_merge = "2.0.0"
 jsonwebtoken = "9.3.0"
 k8s-openapi = { version = "0.22.0", features = ["earliest"] }
@@ -65,6 +66,7 @@ ringbuffer = "0.15.0"
 russh = "0.45.0"
 russh-keys = "0.45.0"
 russh-sftp = "2.0.3"
+rust-embed = "8.5.0"
 schemars = { version = "0.8.21", features = ["chrono"] }
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"

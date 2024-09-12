@@ -1,88 +1,45 @@
 use cata::{Command, Container};
 use clap::{Parser, Subcommand};
-use color_eyre::Section;
-use either::Either::{Left, Right};
-use eyre::{eyre, Result};
-use futures::StreamExt;
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+use eyre::Result;
 use kube::{
-    api::{Api, DeleteParams, ResourceExt},
-    Client,
+    api::{DeleteParams, Patch, PatchParams, ResourceExt},
+    Client, Config,
 };
 use serde::Serialize;
-use tracing::info;
+
+use crate::resources::{install, DynamicClient, GetGvk, MANAGER};
 
 #[derive(Parser, Container)]
 pub struct Resources {
     #[command(subcommand)]
     command: ResourcesCmd,
+
+    /// Namespace to apply resources to, will use your default namespace if not
+    /// set.
+    #[arg(short, long, global = true)]
+    namespace: Option<String>,
 }
 
 #[derive(Subcommand, Container)]
 enum ResourcesCmd {
-    Apply(Apply),
+    Crd(Crd),
     Delete(Delete),
-    Manifest(Manifest),
+    Install(Install),
 }
 
 impl Command for Resources {}
 
 #[derive(Parser, Container)]
-pub struct Apply {
-    /// Update resources if they already exist
-    #[arg(long)]
-    no_update: bool,
-}
+pub struct Crd {}
 
 #[async_trait::async_trait]
-impl Command for Apply {
-    async fn run(&self) -> Result<()> {
-        let client: &Api<CustomResourceDefinition> = &Api::all(Client::try_default().await?);
-
-        crate::resources::create(client, !self.no_update).await?;
-
-        Ok(())
-    }
-}
-
-#[derive(Parser, Container)]
-pub struct Delete {}
-
-#[async_trait::async_trait]
-impl Command for Delete {
+impl Command for Crd {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "resources.delete"))]
+    #[tracing::instrument(err, skip(self), fields(activity = "resources.crd"))]
     async fn run(&self) -> Result<()> {
-        let client: &Api<CustomResourceDefinition> = &Api::all(Client::try_default().await?);
-
-        let errors: Vec<kube::Error> = futures::stream::iter(crate::resources::all())
-            .map(|resource| async move {
-                client
-                    .delete(&resource.name_any(), &DeleteParams::default())
-                    .await
-            })
-            .buffered(100)
-            .inspect(|result| {
-                let Ok(either) = result else { return };
-
-                match either {
-                    Left(o) => info!(name = o.name_any(), "deleted CRD"),
-                    Right(status) => info!(status = format!("{status:?}"), "deletion status"),
-                }
-            })
-            .collect::<Vec<Result<_, _>>>()
-            .await
-            .into_iter()
-            .filter(Result::is_err)
-            .map(Result::unwrap_err)
-            .collect();
-
-        if !errors.is_empty() {
-            return Err(errors
-                .into_iter()
-                .fold(eyre!("unable to delete resources"), |acc, err| {
-                    acc.error(err)
-                }));
+        let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
+        for resource in crate::resources::all() {
+            resource.serialize(&mut serializer)?;
         }
 
         Ok(())
@@ -90,16 +47,89 @@ impl Command for Delete {
 }
 
 #[derive(Parser, Container)]
-pub struct Manifest {}
+pub struct Delete {
+    #[arg(from_global)]
+    namespace: Option<String>,
+}
 
 #[async_trait::async_trait]
-impl Command for Manifest {
+impl Command for Delete {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "resources.manifest"))]
+    #[tracing::instrument(err, skip(self), fields(activity = "resources.delete"))]
     async fn run(&self) -> Result<()> {
-        let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
-        for resource in crate::resources::all() {
-            resource.serialize(&mut serializer)?;
+        let client = Client::try_default().await?;
+
+        let namespace = self
+            .namespace
+            .as_ref()
+            .map_or(Config::infer().await?.default_namespace, String::clone);
+
+        let resources = install::add_patches(namespace.as_str(), install::list()?)?;
+
+        for resource in resources {
+            let gvk = resource.gvk()?;
+
+            tracing::info!("deleting: {}/{}", gvk.kind, resource.name_any());
+
+            resource
+                .dynamic(client.clone())
+                .await?
+                .delete(resource.name_any().as_str(), &DeleteParams::default())
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Parser, Container)]
+pub struct Install {
+    /// Don't actually apply changes, just print what would happen.
+    #[arg(long)]
+    dry_run: bool,
+
+    #[arg(from_global)]
+    namespace: Option<String>,
+}
+
+#[async_trait::async_trait]
+impl Command for Install {
+    #[allow(clippy::blocks_in_conditions)]
+    #[tracing::instrument(err, skip(self), fields(activity = "resources.install"))]
+    async fn run(&self) -> Result<()> {
+        let namespace = self
+            .namespace
+            .as_ref()
+            .map_or(Config::infer().await?.default_namespace, String::clone);
+
+        let resources = install::add_patches(namespace.as_str(), install::list()?)?;
+
+        if self.dry_run {
+            let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
+
+            for resource in resources {
+                resource.serialize(&mut serializer)?;
+            }
+
+            return Ok(());
+        }
+
+        let client = Client::try_default().await?;
+
+        for resource in resources {
+            let gvk = resource.gvk()?;
+
+            tracing::info!("creating/updating: {}/{}", gvk.kind, resource.name_any());
+
+            resource
+                .dynamic(client.clone())
+                .await?
+                .patch(
+                    resource.name_any().as_str(),
+                    &PatchParams::apply(MANAGER).force(),
+                    &Patch::Apply(&resource),
+                )
+                .await?;
         }
 
         Ok(())

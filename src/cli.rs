@@ -6,7 +6,6 @@ mod users;
 use std::sync::{Mutex, OnceLock};
 
 use cata::{
-    output::Format,
     telemetry::{posthog, Telemetry},
     Command, Container,
 };
@@ -45,10 +44,6 @@ pub struct Root {
     /// Log destination, defaults to stderr
     #[arg(long, default_value="--", value_parser = allow_stderr)]
     log_file: Output,
-
-    /// Output format
-    #[arg(short, long, value_enum, default_value_t = Format::Pretty, global = true)]
-    pub output: Format,
 
     /// Disable telemetry
     #[arg(long, global = true)]

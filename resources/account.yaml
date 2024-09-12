@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kty-server
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: kty-server
+    app.kubernetes.io/part-of: kty
+    app.kubernetes.io/managed-by: kty-cli

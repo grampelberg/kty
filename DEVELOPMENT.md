@@ -89,3 +89,11 @@ If you're not running on the cluster, you'll want to:
 - Set `POD_UID` to the `metadata.uid` of the pod from `HOSTNAME`.
 - Set `POD_IP` to the IP address of your host. You can get this by going into a
   pod and doing a `nslookup host.docker.internal`.
+
+## Kubernetes Resources
+
+When updating resources, make sure to update them in both places:
+
+- [resources](/resources/) - Used for `kty resources`, primarily as part of
+  getting started.
+- [helm/templates](/helm/templates/) - Used for `helm install`

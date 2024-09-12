@@ -83,6 +83,16 @@ pub struct Grant {
     /// ID of the user to grant the role to. This will map to how you've
     /// configured the openid provider. By default, it is `email`.
     id: String,
+
+    /// Output the role binding instead of applying it.
+    #[arg(short, long)]
+    output: Option<Output>,
+}
+
+#[derive(clap::ValueEnum, Clone, Default)]
+enum Output {
+    #[default]
+    Yaml,
 }
 
 // TODO: use cata::output, doesn't work because ratatui and tabled disagree on
@@ -109,6 +119,11 @@ impl Command for Grant {
                 ..Default::default()
             }]),
         };
+
+        if let Some(Output::Yaml) = self.output {
+            println!("{}", serde_yaml::to_string(&binding)?);
+            return Ok(());
+        }
 
         Api::<ClusterRoleBinding>::all(kube::Client::try_default().await?)
             .create(&PostParams::default(), &binding)

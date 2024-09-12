@@ -1,6 +1,7 @@
 pub mod age;
 pub mod container;
 pub mod file;
+pub mod install;
 pub mod pod;
 pub mod status;
 pub mod store;
@@ -14,7 +15,12 @@ use itertools::Itertools;
 use json_value_merge::Merge;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::{
-    api::{Api, ObjectMeta, PartialObjectMetaExt, PatchParams, PostParams, ResourceExt},
+    api::{
+        Api, DynamicObject, GroupVersionKind, ObjectMeta, PartialObjectMetaExt, PatchParams,
+        PostParams, ResourceExt,
+    },
+    core::discovery::Scope,
+    discovery::pinned_kind,
     CustomResourceExt, Resource,
 };
 use regex::Regex;
@@ -122,4 +128,50 @@ pub trait Filter {
 
 pub trait Compare {
     fn cmp(&self, right: &Self) -> std::cmp::Ordering;
+}
+
+pub trait GetGvk {
+    fn gvk(&self) -> Result<GroupVersionKind>;
+}
+
+impl GetGvk for DynamicObject {
+    fn gvk(&self) -> Result<GroupVersionKind> {
+        let Some(types) = self.types.as_ref() else {
+            return Err(eyre!("no types found"));
+        };
+
+        let version: Vec<_> = types.api_version.splitn(2, '/').collect();
+
+        let (group, version) = if version.len() == 1 {
+            (String::new(), version[0].to_string())
+        } else {
+            (version[0].to_string(), version[1].to_string())
+        };
+
+        Ok(GroupVersionKind {
+            group,
+            version,
+            kind: types.kind.clone(),
+        })
+    }
+}
+
+pub trait DynamicClient {
+    async fn dynamic(&self, client: kube::Client) -> Result<Api<DynamicObject>>;
+}
+
+impl DynamicClient for DynamicObject {
+    async fn dynamic(&self, client: kube::Client) -> Result<Api<DynamicObject>> {
+        let (ar, caps) = pinned_kind(&client, &self.gvk()?).await?;
+
+        if matches!(caps.scope, Scope::Namespaced) {
+            Ok(Api::namespaced_with(
+                client,
+                self.namespace().unwrap_or_default().as_str(),
+                &ar,
+            ))
+        } else {
+            Ok(Api::all_with(client, &ar))
+        }
+    }
 }
