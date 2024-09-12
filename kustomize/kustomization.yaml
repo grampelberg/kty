@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: getting-started
+
+resources:
+  - rbac.yaml
+  - server.yaml
+
+labels:
+  - includeSelectors: true
+    pairs:
+      app.kubernetes.io/name: kty
+      app.kubernetes.io/part-of: kty
