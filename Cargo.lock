@@ -1904,6 +1904,7 @@ version = "0.0.0-UNSTABLE"
 dependencies = [
  "ansi-to-tui",
  "async-trait",
+ "base64 0.22.1",
  "bon",
  "cata",
  "chrono",
@@ -1913,13 +1914,13 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "derive_builder",
- "either",
  "eyre",
  "fast_qr",
  "futures",
  "hostname",
  "humantime",
  "itertools 0.13.0",
+ "json-patch",
  "json_value_merge",
  "jsonwebtoken",
  "k8s-openapi",
@@ -1938,6 +1939,7 @@ dependencies = [
  "russh",
  "russh-keys",
  "russh-sftp",
+ "rust-embed",
  "schemars",
  "serde",
  "serde_json",
@@ -3292,6 +3294,40 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "rust-embed"
+version = "8.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa66af4a4fdd5e7ebc276f115e895611a34739a9c1c01028383d612d550953c0"
+dependencies = [
+ "rust-embed-impl",
+ "rust-embed-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-impl"
+version = "8.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6125dbc8867951125eec87294137f4e9c2c96566e61bf72c45095a7c77761478"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rust-embed-utils",
+ "syn 2.0.74",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-utils"
+version = "8.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5347777e9aacb56039b0e1f28785929a8a3b709e87482e7442c72e7c12529d"
+dependencies = [
+ "sha2",
+ "walkdir",
 ]
 
 [[package]]

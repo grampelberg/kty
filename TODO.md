@@ -11,10 +11,6 @@
   particular, it seems like it is a little difficult to see the install commands
   and realize that's what you need to use.
 
-## `users grant`
-
-- Allow YAML output for users who don't have a `kubeconfig`.
-
 ## Authorization
 
 - Groups are probably what most users are going to want to use to configure all

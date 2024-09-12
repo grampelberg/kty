@@ -1,41 +1,134 @@
+import { Callout } from 'nextra/components'
+
 # Getting Started
 
-1. Download the [cli][cli-download] and add it to your `$PATH`.
-1. Get a k8s cluster. [k3d][k3d] is a convenient way to get a cluster up and
-   running fast. Follow their installation instructions and create a default
-   cluster.
-1. Grant your email address access to the cluster. Choose `cluster-admin` if
-   you'd like something simple to check out how things work. For more details on
-   the minimum possible permissions, read the [Authorization][auth] section. The
-   email address is what you'll be using to authenticate against. It can either
-   be the one associated with a google or github account. Note, the ID used for
-   login and the providers available can all be configured.
+As part of this getting started guide, you will:
 
-   ```bash
-   kty users grant <cluster-role> <email-address>
-   ```
+- Grant your email address access to the cluster.
+- Install kty on your cluster.
+- Test it out!
 
-1. Start the server.
+<Callout type="info">
+  You can run kty outside of a cluster, but it is a little more complex to get
+  setup because of permissions. Check out the
+  [off-cluster](/installation#off-cluster) instructions for more details.
+</Callout>
 
-   ```bash
-   kty --serve
-   ```
+## Prerequisites
 
-1. SSH into your cluster!
+- Get a k8s cluster. [k3d][k3d] is a convenient way to get a cluster up and
+  running fast. Follow their installation instructions and create a default
+  cluster.
 
-   ```bash
-   ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 me@localhost
-   ```
+## Install the CLI
 
-From this point, here's a few suggestions for things to check out:
+Binares are available on the [releases page][cli-download]. If you have
+homebrew, you can install with:
 
-- Start a new pod. It'll show up in the dashboard immediately!
+```bash
+brew install grampelberg/kty/kty
+```
+
+<Callout type="info">
+  `ssh` is all you need to use kty. The CLI is optional, but makes installation
+  and management a little easier.
+</Callout>
+
+## Setup Permissions
+
+Just like `kubectl`, kty delegates authorization to Kubernetes RBAC. The email
+address you use to login needs to be granted access to the cluster. If your
+organization already uses email addresses for access, you can skip the install
+step - make sure you verify you've got access though.
+
+To grant access to your email, you can use the `kty` CLI. It will apply a
+`ClusteerRoleBinding` that associates your email address with the provided role.
+In this example, we're using `cluster-admin` because it is everywhere and an
+easy way to get started. You can change this to another role, anything with the
+[minimum permissions](/architecture/access-control#authorization) in fact. Run:
+
+```bash
+kty users grant cluster-admin me@example.com
+```
+
+<Callout type="info">
+  If you'd like to verify the YAML or apply it youself, pass `-o yaml` to the
+  command.
+</Callout>
+
+You can verify that this worked and you have the minimum permissions required by
+running:
+
+```bash
+kty users check me@example.com
+```
+
+This command runs a `SelfSubjectAccessReview` against your cluster. If you want
+to use `kubectl` instead, you can run:
+
+```bash
+kubectl auth can-i list pods --as me@example.com
+```
+
+## Install on your cluster
+
+While it isn't required that you run `kty` on your cluster, it takes care of the
+dependencies. To install the server and associated configuration such as
+`ClusterRole` and `Service` resources, run:
+
+```bash
+kubectl create ns kty && \
+  kty resources install -n kty
+```
+
+<Callout type="info">
+
+You can pass `--dry-run` to see what's happening or pass the output to
+`kubectl apply -f -` yourself. If you'd like to install using a different
+method, such as helm, see the [installation](/installation) instructions.
+
+To clean these resources up, you can run `kty resources delete -n kty`.
+
+</Callout>
+
+Verify that this is up and running successfully by checking that the pod has
+started up:
+
+```bash
+kubectl -n kty rollout status deploy server
+```
+
+Once the pod has started up, you'll want to make sure there's an IP address that
+can be reached:
+
+```bash
+kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+<Callout type="warning">
+
+If the load balancer isn't getting a public IP address, there's other ways to
+connect to the server. On way is to port forward using `kubectl`:
+
+```bash
+kubectl -n kty port-forward service/server 2222:2222
+```
+
+This is not something you'd want to do in production, but it's a quick way to
+see what you can do with kty.
+
+</Callout>
+
+## Test it out
+
+```bash
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 me@localhost
+```
+
+## Next Steps
 
 - Exec into a pod. Select the pod you want and go to the `Shell` tab. You'll be
   able to pick the command to exec and then be shell'd into the pod directly.
-
-- Follow the logs. Logs for all containers in a pod are streamed to the `Logs`
-  tab when you've selected a pod from the main list.
 
 - `scp` some files out of a container:
 
@@ -43,10 +136,12 @@ From this point, here's a few suggestions for things to check out:
   scp -P 2222 me@localhost:/default/my-pod/etc/hosts /tmp
   ```
 
-- Use your own [OpenID provider](/installation#bring-your-own-provider).
+- Check out [usage](/usage) for more information on everything that you can do.
 
-Note: you'll want to install on-cluster to use the tunnelling functionality.
-Check out the [helm](/installation/helm) docs for a quick way to do that.
+- You can [bring your own provider](/installation#bring-your-own-provider) if
+  the default provider don't work for you. This would be a great way to
+  configure groups or use other types of logins if your organization uses
+  something other than Google or Github.
 
 [cli-download]: https://github.com/grampelberg/kty/releases
 [k3d]: https://k3d.io
