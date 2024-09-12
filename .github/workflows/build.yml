@@ -51,11 +51,7 @@ jobs:
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
         run: |
-          just set-version build-binary
-
-      - name: rename
-        run: |-
-          cp target/release/kty kty-${{ matrix.os }}-${{ matrix.arch }}
+          just set-version build-binary tar-bin ${{ matrix.os }} ${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
