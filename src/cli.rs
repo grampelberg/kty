@@ -106,5 +106,5 @@ fn allow_stderr(val: &str) -> Result<Output, clio::Error> {
 }
 
 async fn namespace(ns: Option<&String>) -> Result<String> {
-    Ok(ns.map_or(Config::infer().await?.default_namespace, |s| s.clone()))
+    Ok(ns.map_or(Config::infer().await?.default_namespace, Clone::clone))
 }

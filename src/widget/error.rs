@@ -8,14 +8,17 @@ use ratatui::{
     Frame,
 };
 
-use super::{Placement, Widget};
-use crate::events::{Broadcast, Event, Keypress, StringError};
+use super::{
+    nav::{move_cursor, Movement},
+    Placement, Widget,
+};
+use crate::events::{Broadcast, Event, StringError};
 
 #[derive(Default)]
 pub struct Error {
     msg: String,
 
-    position: (u16, u16),
+    position: Position,
 }
 
 impl From<Report> for Error {
@@ -38,25 +41,18 @@ impl From<String> for Error {
 }
 
 impl Widget for Error {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        match event.key() {
-            Some(Keypress::CursorLeft) => {
-                self.position.1 = self.position.1.saturating_sub(1);
-            }
-            Some(Keypress::CursorRight) => {
-                self.position.1 = self.position.1.saturating_add(1);
-            }
-            Some(Keypress::CursorUp) => {
-                self.position.0 = self.position.0.saturating_sub(1);
-            }
-            Some(Keypress::CursorDown) => {
-                self.position.0 = self.position.0.saturating_add(1);
-            }
-            Some(_) => return Ok(Broadcast::Exited),
-            None => {}
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+        let Some(key) = event.key() else {
+            return Ok(Broadcast::Ignored);
+        };
+
+        match move_cursor(key, area) {
+            Some(Movement::X(x)) => self.position.x = self.position.x.saturating_add_signed(x),
+            Some(Movement::Y(y)) => self.position.y = self.position.y.saturating_add_signed(y),
+            None => return Ok(Broadcast::Exited),
         }
 
-        Ok(Broadcast::Ignored)
+        Ok(Broadcast::Consumed)
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -67,7 +63,7 @@ impl Widget for Error {
 
         let pg = Paragraph::new(self.msg.as_bytes().into_text()?)
             .block(block)
-            .scroll(self.position);
+            .scroll((self.position.y, self.position.x));
 
         let width = pg.line_width() as u16 + 1;
 

@@ -9,15 +9,23 @@ use futures::{
 };
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
-use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
+use ratatui::{
+    layout::{Position, Rect},
+    Frame,
+};
 use tokio::{
     sync::{mpsc, mpsc::UnboundedSender},
     task::JoinHandle,
 };
 
-use super::{tabs::Tab, Widget, WIDGET_VIEWS};
+use super::{
+    nav::{move_cursor, Movement},
+    tabs::Tab,
+    viewport::Viewport,
+    Widget, WIDGET_VIEWS,
+};
 use crate::{
-    events::{Broadcast, Event, Keypress},
+    events::{Broadcast, Event},
     resources::{
         container::{Container, ContainerExt},
         pod::PodExt,
@@ -30,9 +38,7 @@ pub struct Log {
     rx: mpsc::UnboundedReceiver<String>,
     buffer: Vec<String>,
 
-    follow: bool,
-    position: usize,
-    area: Rect,
+    position: Position,
 }
 
 // TODO:
@@ -71,9 +77,7 @@ impl Log {
             rx,
             buffer: Vec::new(),
 
-            follow: true,
-            position: 0,
-            area: Rect::default(),
+            position: Position::default(),
         }
     }
 
@@ -86,57 +90,46 @@ impl Log {
         )
     }
 
-    fn update(&mut self) {
+    fn update(&mut self) -> u16 {
+        let mut i = 0;
+
         while let Ok(line) = self.rx.try_recv() {
             self.buffer.push(line);
-
-            if self.position == self.buffer.len() {
-                self.position = self.buffer.len();
-            }
+            i += 1;
         }
-    }
 
-    fn scroll(&mut self, key: &Keypress) {
-        let max = self.buffer.len().saturating_sub(self.area.height as usize);
-
-        let x = if self.follow { max } else { self.position };
-
-        self.position = match key {
-            Keypress::CursorUp => x.saturating_sub(1),
-            Keypress::CursorDown => x.saturating_add(1),
-            Keypress::Control('b') => x.saturating_sub(self.area.height as usize),
-            Keypress::Control('f') | Keypress::Printable(' ') => {
-                x.saturating_add(self.area.height as usize)
-            }
-            _ => return,
-        }
-        .clamp(0, max);
-
-        self.follow = self.position == max;
+        i
     }
 }
 
 impl Widget for Log {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
-        match key {
-            Keypress::CursorUp
-            | Keypress::CursorDown
-            | Keypress::Printable(' ')
-            | Keypress::Control('b' | 'f') => self.scroll(key),
-            _ => return Ok(Broadcast::Ignored),
+        if let Some(Movement::Y(y)) = move_cursor(key, area) {
+            self.position.y = self.position.y.saturating_add_signed(y);
+
+            return Ok(Broadcast::Consumed);
         }
 
-        Ok(Broadcast::Consumed)
+        Ok(Broadcast::Ignored)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        self.area = area;
+        let lines = self.update();
 
-        self.update();
+        if self
+            .position
+            .y
+            .saturating_add(lines)
+            .saturating_add(area.height)
+            >= self.buffer.len() as u16
+        {
+            self.position.y = u16::MAX;
+        }
 
         if self.task.is_finished() {
             let task = &mut self.task;
@@ -155,27 +148,11 @@ impl Widget for Log {
             }
         }
 
-        let (start, end) = if self.follow {
-            (
-                self.buffer.len().saturating_sub(area.height as usize),
-                self.buffer.len(),
-            )
-        } else {
-            (
-                self.position,
-                self.position
-                    .saturating_add(area.height as usize)
-                    .clamp(0, self.buffer.len()),
-            )
-        };
-
-        let txt: Vec<Line> = self.buffer[start..end]
-            .iter()
-            .map(|l| Line::from(l.as_str()))
-            .collect();
-
-        let paragraph = Paragraph::new(txt);
-        frame.render_widget(paragraph, area);
+        frame.render_stateful_widget_ref(
+            Viewport::builder().buffer(&self.buffer).build(),
+            area,
+            &mut self.position,
+        );
 
         Ok(())
     }

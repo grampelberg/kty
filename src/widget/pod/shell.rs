@@ -50,7 +50,12 @@ impl Shell {
         let len = pod.as_ref().containers(None).len();
 
         let mut view = table::Filtered::builder()
-            .table(table::Table::builder().items(pod.clone()).build())
+            .table(
+                table::Table::builder()
+                    .items(pod.clone())
+                    .border(false)
+                    .build(),
+            )
             .constructor(Command::from_pod(client, pod))
             .build();
 
@@ -77,8 +82,8 @@ impl Shell {
 }
 
 impl Widget for Shell {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        self.view.dispatch(event)
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+        self.view.dispatch(event, area)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
@@ -134,12 +139,12 @@ impl Command {
         })
     }
 
-    fn dispatch_input(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch_input(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         let CommandState::Input(ref mut txt) = self.state else {
             return Ok(Broadcast::Ignored);
         };
 
-        propagate!(txt.dispatch(event));
+        propagate!(txt.dispatch(event, area));
 
         let cmd = txt
             .content()
@@ -190,8 +195,8 @@ impl Command {
 }
 
 impl Widget for Command {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.dispatch_input(event));
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+        propagate!(self.dispatch_input(event, area));
 
         match event {
             Event::Finished(result) => Ok(result

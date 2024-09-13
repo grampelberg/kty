@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use eyre::Result;
 use kube::{
     api::{DeleteParams, Patch, PatchParams, ResourceExt},
-    Client, Config,
+    Client,
 };
 use serde::Serialize;
 

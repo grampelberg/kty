@@ -4,10 +4,12 @@ pub mod error;
 pub mod input;
 pub mod loading;
 pub mod log;
+pub mod nav;
 pub mod pod;
 pub mod table;
 pub mod tabs;
 pub mod tunnel;
+pub mod viewport;
 pub mod yaml;
 
 use std::pin::Pin;
@@ -81,7 +83,7 @@ pub trait Widget {
         std::any::type_name::<Self>()
     }
 
-    fn dispatch(&mut self, _event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, _event: &Event, _area: Rect) -> Result<Broadcast> {
         Ok(Broadcast::Ignored)
     }
 
@@ -135,9 +137,9 @@ pub trait Bundle {
         false
     }
 
-    fn dispatch_children(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch_children(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         for (i, widget) in self.widgets().iter_mut().enumerate().rev() {
-            propagate!(widget.dispatch(event), {
+            propagate!(widget.dispatch(event, area), {
                 if i == 0 {
                     return Ok(Broadcast::Exited);
                 }

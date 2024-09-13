@@ -172,9 +172,10 @@ async fn run(
                 let raw_result =
                     draw_raw(raw_widget, &mut term, &mut rx, stdout.non_blocking()).await;
 
-                let result = current_widget.dispatch(&Event::Finished(
-                    raw_result.map_err(|e| StringError(format!("{e:?}"))),
-                ))?;
+                let result = current_widget.dispatch(
+                    &Event::Finished(raw_result.map_err(|e| StringError(format!("{e:?}")))),
+                    term.get_frame().area(),
+                )?;
 
                 state.ui();
 
@@ -195,7 +196,7 @@ async fn run(
 
     term.draw(|frame| {
         frame.render_widget(Clear, frame.area());
-        frame.set_cursor_position(Position::new(0, 0));
+        frame.set_cursor_position(Position::default());
     })?;
 
     stdout.shutdown("exiting...".to_string()).await?;
@@ -213,14 +214,14 @@ where
 {
     let result = match ev {
         Event::Input(Input { key, .. }) => {
-            if matches!(key, Keypress::EndOfText) {
+            if matches!(key, Keypress::Control('c')) {
                 return Ok(Broadcast::Exited);
             }
 
-            widget.dispatch(ev)
+            widget.dispatch(ev, term.get_frame().area())
         }
         Event::Render => Ok(Broadcast::Ignored),
-        _ => widget.dispatch(ev),
+        _ => widget.dispatch(ev, term.get_frame().area()),
     };
 
     term.draw(|frame| {

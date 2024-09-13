@@ -45,7 +45,7 @@ impl Tunnel {
 }
 
 impl Widget for Tunnel {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: Rect) -> Result<Broadcast> {
         Ok(match event {
             Event::Tunnel(Err(err)) => {
                 let tun = err.tunnel.clone().into_error();

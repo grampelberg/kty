@@ -7,7 +7,10 @@ use ratatui::{
     Frame,
 };
 
-use super::Widget;
+use super::{
+    nav::{exit_keys, move_cursor, Movement},
+    Widget,
+};
 use crate::events::{Broadcast, Event, Keypress};
 
 pub type Content = Rc<RefCell<Option<String>>>;
@@ -47,21 +50,25 @@ impl Text {
 
 impl Widget for Text {
     // TODO: implement ctrl + a, ctrl + e, ctrl + k, ctrl + u
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
+        tracing::info!("key: {:?}", key);
+
         match key {
-            Keypress::Escape => return Ok(Broadcast::Exited),
+            exit_keys!() => return Ok(Broadcast::Exited),
             Keypress::Printable(x) => {
                 self.content
                     .try_borrow_mut()?
                     .get_or_insert_with(String::new)
                     .insert(self.pos as usize, *x);
                 self.pos = self.pos.saturating_add(1);
+
+                return Ok(Broadcast::Consumed);
             }
-            Keypress::Backspace => 'outer: {
+            Keypress::Backspace | Keypress::Delete => 'outer: {
                 if self.pos == 0 {
                     break 'outer;
                 }
@@ -72,25 +79,32 @@ impl Widget for Text {
                     .ok_or(eyre!("no content"))?
                     .remove(self.pos as usize - 1);
                 self.pos = self.pos.saturating_sub(1);
+
+                return Ok(Broadcast::Consumed);
             }
-            Keypress::CursorLeft => {
-                self.pos = self.pos.saturating_sub(1);
+            Keypress::Control('k') => {
+                let mut opt = self.content.try_borrow_mut()?;
+
+                let content = opt.get_or_insert_with(String::new);
+
+                *content = String::new();
+
+                self.pos = 0;
             }
-            #[allow(clippy::cast_possible_truncation)]
-            Keypress::CursorRight => {
-                self.pos = self.pos.saturating_add(1).clamp(
-                    0,
-                    self.content.try_borrow()?.as_ref().map_or(0, String::len) as u16,
-                );
-            }
-            _ => {
-                return Ok(Broadcast::Ignored);
-            }
+            _ => {}
         };
 
-        Ok(Broadcast::Consumed)
+        #[allow(clippy::cast_possible_truncation)]
+        if let Some(Movement::X(x)) = move_cursor(key, area) {
+            self.pos = self.pos.saturating_add_signed(x);
+
+            return Ok(Broadcast::Consumed);
+        }
+
+        Ok(Broadcast::Ignored)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let mut block = Block::default().borders(Borders::ALL);
 
@@ -99,14 +113,15 @@ impl Widget for Text {
         }
 
         let cmd_pos = block.inner(area);
+        let content = self
+            .content
+            .try_borrow()?
+            .as_ref()
+            .map_or(String::new(), String::clone);
 
-        let pg = Paragraph::new(
-            self.content
-                .try_borrow()?
-                .as_ref()
-                .map_or(String::new(), String::clone),
-        )
-        .block(block);
+        self.pos = self.pos.clamp(0, content.len() as u16);
+
+        let pg = Paragraph::new(content).block(block);
 
         frame.render_widget(pg, area);
 

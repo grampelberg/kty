@@ -12,7 +12,11 @@ use ratatui::{
 };
 use tachyonfx::Effect;
 
-use super::{input::Text, BoxWidget, Bundle, Widget};
+use super::{
+    input::Text,
+    nav::{move_cursor, Movement},
+    BoxWidget, Bundle, Widget,
+};
 use crate::events::{Broadcast, Event, Keypress};
 
 lazy_static! {
@@ -86,6 +90,7 @@ where
     style: Style,
     title: Option<String>,
     highlight: bool,
+    border: bool,
 
     // Internal state
     items: S,
@@ -108,6 +113,7 @@ where
         #[builder(default = true)] selected: bool,
         items: S,
         #[builder(default)] filter: Rc<RefCell<Option<String>>>,
+        #[builder(default = true)] border: bool,
     ) -> Self {
         let view = if selected {
             TableState::default().with_selected(0)
@@ -122,6 +128,7 @@ where
             items,
             view,
             filter,
+            border,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -135,23 +142,29 @@ impl<S> Widget for Table<S>
 where
     S: Items,
 {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
-        match key {
-            Keypress::CursorDown | Keypress::Printable('j') => self.view.select_next(),
-            Keypress::CursorUp | Keypress::Printable('k') => self.view.select_previous(),
-            Keypress::Enter => {
-                return Ok(Broadcast::Selected(
-                    self.view.selected().unwrap_or_default(),
-                ))
-            }
-            _ => return Ok(Broadcast::Ignored),
+        if let Some(Movement::Y(y)) = move_cursor(key, area) {
+            self.view.select(Some(
+                self.view
+                    .selected()
+                    .unwrap_or_default()
+                    .saturating_add_signed(y.into()),
+            ));
+
+            return Ok(Broadcast::Consumed);
         }
 
-        Ok(Broadcast::Consumed)
+        if matches!(key, Keypress::Enter) {
+            return Ok(Broadcast::Selected(
+                self.view.selected().unwrap_or_default(),
+            ));
+        }
+
+        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
@@ -179,7 +192,9 @@ where
             border = border.title(title.as_str());
         };
 
-        table = table.block(border);
+        if self.border {
+            table = table.block(border);
+        }
 
         frame.render_stateful_widget(table, area, &mut self.view);
 
@@ -243,7 +258,7 @@ impl<S> Widget for Filtered<S>
 where
     S: Items + 'static,
 {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         if let Some(Keypress::Printable('/')) = event.key() {
             TABLE_FILTER.inc();
 
@@ -253,7 +268,7 @@ where
             return Ok(Broadcast::Consumed);
         }
 
-        match self.dispatch_children(event)? {
+        match self.dispatch_children(event, area)? {
             Broadcast::Selected(idx) => {
                 self.select(idx)?;
 
