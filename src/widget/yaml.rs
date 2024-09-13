@@ -5,7 +5,12 @@ use std::{
 
 use eyre::Result;
 use kube::Resource;
-use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
+use ratatui::{
+    layout::{Position, Rect},
+    text::Line,
+    widgets::Paragraph,
+    Frame,
+};
 use serde::Serialize;
 use syntect::{
     easy::HighlightLines,
@@ -15,9 +20,12 @@ use syntect::{
 };
 use syntect_tui::into_span;
 
-use super::{Widget, WIDGET_VIEWS_VEC};
+use super::{
+    nav::{move_cursor, Movement},
+    Widget, WIDGET_VIEWS_VEC,
+};
 use crate::{
-    events::{Broadcast, Event, Keypress},
+    events::{Broadcast, Event},
     resources::Yaml as YamlResource,
     widget::tabs::Tab,
 };
@@ -41,8 +49,6 @@ fn to_lines(txt: &str) -> Vec<Line> {
 
     let mut highlighter = HighlightLines::new(syntax, &THEME);
 
-    // let txt = resource.to_yaml().unwrap();
-
     LinesWithEndings::from(txt)
         .map(|line| {
             highlighter
@@ -60,9 +66,7 @@ fn to_lines(txt: &str) -> Vec<Line> {
 // - See logs for performance improvements (eg. only render visible lines).
 pub struct Yaml {
     txt: String,
-    length: u16,
-    area: Rect,
-    position: (u16, u16),
+    position: Position,
 }
 
 impl Yaml {
@@ -77,11 +81,8 @@ impl Yaml {
         let txt = resource.to_yaml().unwrap();
 
         Self {
-            #[allow(clippy::cast_possible_truncation)]
-            length: LinesWithEndings::from(txt.as_str()).count() as u16,
             txt,
-            area: Rect::default(),
-            position: (0, 0),
+            position: Position::default(),
         }
     }
 
@@ -91,46 +92,33 @@ impl Yaml {
     {
         Tab::new(name, Box::new(move || Box::new(Self::new(&resource))))
     }
-
-    fn scroll(&mut self, key: &Keypress) {
-        let (x, y) = self.position;
-
-        let next = match key {
-            Keypress::CursorUp => x.saturating_sub(1),
-            Keypress::CursorDown => x.saturating_add(1),
-            Keypress::Control('b') => x.saturating_sub(self.area.height),
-            Keypress::Control('f') | Keypress::Printable(' ') => x.saturating_add(self.area.height),
-            _ => return,
-        }
-        .clamp(0, self.length.saturating_sub(self.area.height + 2));
-
-        self.position = (next, y);
-    }
 }
 
 impl Widget for Yaml {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
-        match key {
-            Keypress::CursorUp
-            | Keypress::CursorDown
-            | Keypress::Printable(' ')
-            | Keypress::Control('b' | 'f') => self.scroll(key),
-            _ => return Ok(Broadcast::Ignored),
+        if let Some(Movement::Y(y)) = move_cursor(key, area) {
+            self.position.y = self.position.y.saturating_add_signed(y);
+
+            return Ok(Broadcast::Consumed);
         }
 
-        Ok(Broadcast::Consumed)
+        Ok(Broadcast::Ignored)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        self.area = area;
-
         let lines = to_lines(self.txt.as_str());
 
-        frame.render_widget(Paragraph::new(lines).scroll(self.position), area);
+        self.position.y = self.position.y.clamp(0, lines.len() as u16);
+
+        frame.render_widget(
+            Paragraph::new(lines).scroll((self.position.y, self.position.x)),
+            area,
+        );
 
         Ok(())
     }

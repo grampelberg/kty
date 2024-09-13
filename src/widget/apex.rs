@@ -1,4 +1,5 @@
 use eyre::Result;
+use ratatui::layout::Rect;
 use tachyonfx::{fx, Effect, EffectTimer, Interpolation};
 use tracing::{metadata::LevelFilter, Level};
 
@@ -46,13 +47,13 @@ impl Bundle for Apex {
 }
 
 impl Widget for Apex {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
         if let Event::Tunnel(Err(err)) = event {
             self.widgets.push(Error::from(err.message()).boxed());
             self.effects.reset();
         }
 
-        self.dispatch_children(event)
+        self.dispatch_children(event, area)
     }
 
     fn draw(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect) -> Result<()> {

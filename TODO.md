@@ -35,10 +35,6 @@
 
 ## TUI
 
-- Implement vim [key bindings](https://vim.rtorr.com).
-
-- Move navigation dispatch (up, down) into common code.
-
 - Add routing back in.
 
 - It feels like it'd be nice to just try to run the default command and if it
@@ -50,6 +46,10 @@
 
 - The initial coalesce in `Apex` is a little weird because of the initial
   loading screen - feels like it is jumping a couple frames.
+
+- Move YAML over to viewport. Should viewport be doing syntax highlighting by
+  default? How do we do a viewport over a set of lines that require history to
+  do highlighting?
 
 - Is there a way to do FPS on a per-session basis with prometheus? Naively the
   way to do it would be to have a per-session label value, but that would be

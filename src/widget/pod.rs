@@ -50,8 +50,8 @@ impl List {
 }
 
 impl Widget for List {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.view.dispatch(event));
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+        propagate!(self.view.dispatch(event, area));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
@@ -137,8 +137,8 @@ impl Detail {
 }
 
 impl Widget for Detail {
-    fn dispatch(&mut self, event: &Event) -> Result<Broadcast> {
-        propagate!(self.view.dispatch(event));
+    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+        propagate!(self.view.dispatch(event, area));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
