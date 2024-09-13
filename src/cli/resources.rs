@@ -7,6 +7,7 @@ use kube::{
 };
 use serde::Serialize;
 
+use super::namespace;
 use crate::resources::{install, DynamicClient, GetGvk, MANAGER};
 
 #[derive(Parser, Container)]
@@ -59,10 +60,7 @@ impl Command for Delete {
     async fn run(&self) -> Result<()> {
         let client = Client::try_default().await?;
 
-        let namespace = self
-            .namespace
-            .as_ref()
-            .map_or(Config::infer().await?.default_namespace, String::clone);
+        let namespace = namespace(self.namespace.as_ref()).await?;
 
         let resources = install::add_patches(namespace.as_str(), install::list()?)?;
 
@@ -97,10 +95,7 @@ impl Command for Install {
     #[allow(clippy::blocks_in_conditions)]
     #[tracing::instrument(err, skip(self), fields(activity = "resources.install"))]
     async fn run(&self) -> Result<()> {
-        let namespace = self
-            .namespace
-            .as_ref()
-            .map_or(Config::infer().await?.default_namespace, String::clone);
+        let namespace = namespace(self.namespace.as_ref()).await?;
 
         let resources = install::add_patches(namespace.as_str(), install::list()?)?;
 
