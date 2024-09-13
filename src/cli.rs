@@ -13,6 +13,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use clio::Output;
 use eyre::{eyre, Result};
+use kube::Config;
 use tracing::metadata::LevelFilter;
 use tracing_error::ErrorLayer;
 use tracing_log::AsTrace;
@@ -102,4 +103,8 @@ fn allow_stderr(val: &str) -> Result<Output, clio::Error> {
     }
 
     Output::new(val)
+}
+
+async fn namespace(ns: Option<&String>) -> Result<String> {
+    Ok(ns.map_or(Config::infer().await?.default_namespace, |s| s.clone()))
 }
