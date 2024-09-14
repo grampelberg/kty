@@ -1,19 +1,31 @@
 use eyre::Result;
-use ratatui::layout::Rect;
-use tachyonfx::{fx, Effect, EffectTimer, Interpolation};
+use ratatui::{buffer::Buffer, layout::Rect, Frame};
+use tachyonfx::{fx, EffectTimer, Interpolation};
 use tracing::{metadata::LevelFilter, Level};
 
-use super::{debug::Debug, error::Error, pod, tunnel::Tunnel, Bundle, ResetEffect, Widget};
-use crate::events::{Broadcast, Event};
+use super::{debug::Debug, error::Error, pod, tunnel::Tunnel, view::View, Widget};
+use crate::{
+    events::{Broadcast, Event},
+    fx::Animated,
+};
 
 pub struct Apex {
-    effects: Vec<Effect>,
-    widgets: Vec<Box<dyn Widget>>,
+    view: View,
 }
 
 impl Apex {
     pub fn new(client: kube::Client) -> Self {
-        let mut widgets = vec![pod::List::new(client).boxed(), Tunnel::default().boxed()];
+        let mut widgets = vec![
+            Animated::builder()
+                .widget(pod::List::new(client).boxed())
+                .effect(fx::coalesce(EffectTimer::from_ms(
+                    500,
+                    Interpolation::CubicOut,
+                )))
+                .build()
+                .boxed(),
+            Tunnel::default().boxed(),
+        ];
 
         // TODO: This dependency on the crate is unfortunate, it should probably be
         // moved into something like `cata`. See `crate::cli::LEVEL` for an explanation
@@ -23,40 +35,21 @@ impl Apex {
         }
 
         Self {
-            effects: vec![fx::coalesce(EffectTimer::from_ms(
-                500,
-                Interpolation::CubicOut,
-            ))],
-            widgets,
+            view: View::builder().widgets(widgets).show_all(true).build(),
         }
-    }
-}
-
-impl Bundle for Apex {
-    fn show_all(&self) -> bool {
-        true
-    }
-
-    fn effects(&mut self) -> &mut Vec<Effect> {
-        &mut self.effects
-    }
-
-    fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>> {
-        &mut self.widgets
     }
 }
 
 impl Widget for Apex {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         if let Event::Tunnel(Err(err)) = event {
-            self.widgets.push(Error::from(err.message()).boxed());
-            self.effects.reset();
+            self.view.push(Error::from(err.message()).boxed());
         }
 
-        self.dispatch_children(event, area)
+        self.view.dispatch(event, buffer, area)
     }
 
-    fn draw(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect) -> Result<()> {
-        Bundle::draw(self, frame, area)
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        self.view.draw(frame, area)
     }
 }

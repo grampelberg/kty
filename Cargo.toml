@@ -52,6 +52,7 @@ kube = { version = "0.94.1", features = ["derive", "runtime", "ws"] }
 lazy_static = "1.5.0"
 local-ip-address = "0.6.2"
 mio = "1.0.2"
+ndarray = "0.16.1"
 pkcs8 = "0.10.2"
 prometheus = "0.13.4"
 prometheus-static-metric = "0.5.1"

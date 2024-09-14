@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use eyre::{eyre, Result};
 use ratatui::{
+    buffer::Buffer,
     layout::{Position, Rect},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -50,12 +51,10 @@ impl Text {
 
 impl Widget for Text {
     // TODO: implement ctrl + a, ctrl + e, ctrl + k, ctrl + u
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
-
-        tracing::info!("key: {:?}", key);
 
         match key {
             exit_keys!() => return Ok(Broadcast::Exited),

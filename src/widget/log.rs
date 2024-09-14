@@ -10,6 +10,7 @@ use futures::{
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{
+    buffer::Buffer,
     layout::{Position, Rect},
     Frame,
 };
@@ -103,7 +104,7 @@ impl Log {
 }
 
 impl Widget for Log {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };

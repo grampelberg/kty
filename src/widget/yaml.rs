@@ -6,6 +6,7 @@ use std::{
 use eyre::Result;
 use kube::Resource;
 use ratatui::{
+    buffer::Buffer,
     layout::{Position, Rect},
     text::Line,
     widgets::Paragraph,
@@ -95,7 +96,7 @@ impl Yaml {
 }
 
 impl Widget for Yaml {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };

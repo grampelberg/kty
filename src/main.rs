@@ -5,6 +5,7 @@ mod broadcast;
 mod cli;
 mod dashboard;
 mod events;
+mod fx;
 mod health;
 mod identity;
 mod io;

@@ -9,6 +9,7 @@ pub mod pod;
 pub mod table;
 pub mod tabs;
 pub mod tunnel;
+pub mod view;
 pub mod viewport;
 pub mod yaml;
 
@@ -16,21 +17,17 @@ use std::pin::Pin;
 
 use bon::builder;
 use eyre::Result;
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{opts, register_int_counter_vec, IntCounterVec};
 use prometheus_static_metric::make_static_metric;
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    buffer::Buffer,
+    layout::{Constraint, Rect},
     Frame,
 };
-use tachyonfx::{Effect, EffectRenderer, Shader};
 use tokio::{io::AsyncWrite, sync::mpsc::UnboundedReceiver};
 
-use crate::{
-    dashboard::RENDER_INTERVAL,
-    events::{Broadcast, Event},
-};
+use crate::events::{Broadcast, Event};
 
 make_static_metric! {
     pub struct WidgetVec: IntCounter {
@@ -83,7 +80,7 @@ pub trait Widget {
         std::any::type_name::<Self>()
     }
 
-    fn dispatch(&mut self, _event: &Event, _area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, _event: &Event, _buffer: &Buffer, _area: Rect) -> Result<Broadcast> {
         Ok(Broadcast::Ignored)
     }
 
@@ -129,70 +126,6 @@ impl std::fmt::Debug for Box<dyn Raw> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(format!("Box<dyn Raw<{}>>", self._name()).as_str())
             .finish()
-    }
-}
-
-pub trait Bundle {
-    fn show_all(&self) -> bool {
-        false
-    }
-
-    fn dispatch_children(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
-        for (i, widget) in self.widgets().iter_mut().enumerate().rev() {
-            propagate!(widget.dispatch(event, area), {
-                if i == 0 {
-                    return Ok(Broadcast::Exited);
-                }
-                self.widgets().remove(i);
-                self.effects().reset();
-            });
-        }
-
-        Ok(Broadcast::Ignored)
-    }
-
-    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let show_all = self.show_all();
-
-        let chunks = self.widgets().iter_mut().chunk_by(|widget| widget.zindex());
-
-        let mut layers: Box<dyn Iterator<Item = _>> =
-            Box::new(chunks.into_iter().sorted_by(|(a, _), (b, _)| a.cmp(b)));
-
-        if !show_all {
-            layers = Box::new(layers.tail(1));
-        }
-
-        for (_, layer) in layers {
-            let layer: Vec<_> = layer.collect();
-
-            let areas = Layout::vertical(layer.iter().map(|widget| widget.placement().vertical))
-                .split(area);
-
-            for (widget, area) in layer.into_iter().zip(areas.iter()) {
-                widget.draw(frame, *area)?;
-            }
-        }
-
-        for effect in self.effects().iter_mut().filter(|effect| effect.running()) {
-            frame.render_effect(effect, area, RENDER_INTERVAL.into());
-        }
-
-        Ok(())
-    }
-
-    fn effects(&mut self) -> &mut Vec<Effect>;
-
-    fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>>;
-}
-
-trait ResetEffect {
-    fn reset(&mut self);
-}
-
-impl ResetEffect for Vec<Effect> {
-    fn reset(&mut self) {
-        self.iter_mut().for_each(Shader::reset);
     }
 }
 

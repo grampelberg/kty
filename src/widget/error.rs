@@ -1,6 +1,7 @@
 use ansi_to_tui::IntoText;
 use eyre::{Report, Result};
 use ratatui::{
+    buffer::Buffer,
     layout::Rect,
     prelude::*,
     style::Style,
@@ -41,7 +42,7 @@ impl From<String> for Error {
 }
 
 impl Widget for Error {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };

@@ -4,20 +4,26 @@ use eyre::Result;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Rect},
     style,
     style::{palette::tailwind, Modifier, Stylize},
     widgets::{self, Block, Borders, TableState},
     Frame,
 };
-use tachyonfx::Effect;
+use tachyonfx::{fx, EffectTimer, Interpolation};
 
 use super::{
+    error::Error,
     input::Text,
     nav::{move_cursor, Movement},
-    BoxWidget, Bundle, Widget,
+    view::View,
+    BoxWidget, Widget,
 };
-use crate::events::{Broadcast, Event, Keypress};
+use crate::{
+    events::{Broadcast, Event, Keypress},
+    fx::{right_to_left, Animated},
+};
 
 lazy_static! {
     static ref TABLE_FILTER: IntCounter = register_int_counter!(
@@ -142,7 +148,7 @@ impl<S> Widget for Table<S>
 where
     S: Items,
 {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
@@ -202,83 +208,81 @@ where
     }
 }
 
-pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<Box<dyn Widget>> + Send>;
+pub type DetailFn = Box<dyn Fn(usize, Option<String>) -> Result<BoxWidget>>;
 
-pub struct Filtered<S>
-where
-    S: Items,
-{
+pub struct Filtered {
     constructor: DetailFn,
     filter: Rc<RefCell<Option<String>>>,
-
-    effects: Vec<Effect>,
-    widgets: Vec<BoxWidget>,
-
-    _phantom: std::marker::PhantomData<S>,
+    view: View,
 }
 
 #[bon::bon]
-impl<S> Filtered<S>
-where
-    S: Items + 'static,
-{
+impl Filtered {
     #[builder]
-    pub fn new(table: Table<S>, constructor: DetailFn) -> Self {
+    pub fn new<S>(table: Table<S>, constructor: DetailFn) -> Self
+    where
+        S: Items + 'static,
+    {
         Self {
             constructor,
             filter: table.filter(),
-            effects: vec![],
-            widgets: vec![table.boxed()],
-            _phantom: std::marker::PhantomData,
+            view: View::builder().widgets(vec![table.boxed()]).build(),
         }
     }
 
     pub fn select(&mut self, idx: usize) -> Result<()> {
-        self.widgets
-            .push((self.constructor)(idx, self.filter.borrow().clone())?);
+        self.select_with(idx, None)
+    }
+
+    fn select_with(&mut self, idx: usize, frame: Option<&Buffer>) -> Result<()> {
+        let widget = (self.constructor)(idx, self.filter.borrow().clone())?;
+
+        let detail = Animated::builder()
+            .maybe_effect(frame.map(|buffer| {
+                fx::parallel(&[
+                    fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
+                    right_to_left(
+                        EffectTimer::from_ms(500, Interpolation::SineInOut),
+                        buffer.clone(),
+                    ),
+                ])
+            }))
+            .widget(widget)
+            .build();
+
+        self.view.push(detail.boxed());
 
         Ok(())
     }
 }
 
-impl<S> Bundle for Filtered<S>
-where
-    S: Items + 'static,
-{
-    fn effects(&mut self) -> &mut Vec<Effect> {
-        &mut self.effects
-    }
-
-    fn widgets(&mut self) -> &mut Vec<Box<dyn Widget>> {
-        &mut self.widgets
-    }
-}
-
-impl<S> Widget for Filtered<S>
-where
-    S: Items + 'static,
-{
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+impl Widget for Filtered {
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         if let Some(Keypress::Printable('/')) = event.key() {
             TABLE_FILTER.inc();
 
-            self.widgets
+            self.view
                 .push(Text::builder().title("Filter").build().boxed());
 
             return Ok(Broadcast::Consumed);
         }
 
-        match self.dispatch_children(event, area)? {
-            Broadcast::Selected(idx) => {
-                self.select(idx)?;
+        match self.view.dispatch(event, buffer, area) {
+            Ok(Broadcast::Selected(idx)) => {
+                self.select_with(idx, Some(buffer))?;
 
                 Ok(Broadcast::Consumed)
             }
-            x => Ok(x),
+            Ok(x) => Ok(x),
+            Err(e) => {
+                self.view.push(Error::from(e).boxed());
+
+                Ok(Broadcast::Consumed)
+            }
         }
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        Bundle::draw(self, frame, area)
+        self.view.draw(frame, area)
     }
 }
