@@ -12,9 +12,11 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders},
 };
+use tokio::sync::oneshot;
 
 use super::{
-    loading::Loading, log::Log, propagate, table, tabs::TabbedView, Placement, Widget, WIDGET_VIEWS,
+    loading::Loading, log::Log, propagate, table, tabs::TabbedView, view::View, Placement, Widget,
+    WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
@@ -23,8 +25,8 @@ use crate::{
 };
 
 pub struct List {
-    pods: Arc<Store<Pod>>,
-    view: table::Filtered<Arc<Store<Pod>>>,
+    view: View,
+    is_ready: oneshot::Receiver<()>,
 }
 
 impl List {
@@ -33,25 +35,29 @@ impl List {
     pub fn new(client: kube::Client) -> Self {
         WIDGET_VIEWS.pod.list.inc();
 
-        let pods = Arc::new(Store::new(client.clone()));
-        let table = table::Table::builder()
-            .title("Pods")
-            .items(pods.clone())
+        let (pods, is_ready) = Store::new(client.clone());
+        let table = table::Filtered::builder()
+            .table(
+                table::Table::builder()
+                    .title("Pods")
+                    .items(pods.clone())
+                    .build(),
+            )
+            .constructor(Detail::from_store(client, pods))
             .build();
 
+        let widgets = vec![table.boxed(), Loading.boxed()];
+
         Self {
-            pods: pods.clone(),
-            view: table::Filtered::builder()
-                .table(table)
-                .constructor(Detail::from_store(client, pods))
-                .build(),
+            view: View::builder().widgets(widgets).build(),
+            is_ready,
         }
     }
 }
 
 impl Widget for List {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
-        propagate!(self.view.dispatch(event, area));
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        propagate!(self.view.dispatch(event, buffer, area));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);
@@ -61,10 +67,9 @@ impl Widget for List {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        if self.pods.loading() {
-            frame.render_widget(&Loading, area);
-
-            return Ok(());
+        // TODO: add an error screen here if Err(TryRecvError::Closed)
+        if let Ok(()) = self.is_ready.try_recv() {
+            self.view.pop();
         }
 
         self.view.draw(frame, area)
@@ -96,7 +101,9 @@ struct Detail {
     view: TabbedView,
 }
 
+#[bon::bon]
 impl Detail {
+    #[builder]
     fn new(client: &kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.pod.detail.inc();
 
@@ -116,7 +123,7 @@ impl Detail {
                 .get(idx, filter)
                 .ok_or_else(|| eyre!("pod not found"))?;
 
-            Ok(Box::new(Detail::new(&client, pod.clone())))
+            Ok(Detail::builder().client(&client).pod(pod).build().boxed())
         })
     }
 
@@ -137,8 +144,8 @@ impl Detail {
 }
 
 impl Widget for Detail {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
-        propagate!(self.view.dispatch(event, area));
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        propagate!(self.view.dispatch(event, buffer, area));
 
         if matches!(event.key(), Some(Keypress::Escape)) {
             return Ok(Broadcast::Exited);

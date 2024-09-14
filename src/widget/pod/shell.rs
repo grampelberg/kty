@@ -11,7 +11,11 @@ use kube::{
 };
 use lazy_static::lazy_static;
 use prometheus::{histogram_opts, register_histogram, Histogram};
-use ratatui::{layout::Rect, prelude::*};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    Frame,
+};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::mpsc::UnboundedReceiver,
@@ -38,7 +42,7 @@ lazy_static! {
 }
 
 pub struct Shell {
-    view: table::Filtered<Arc<Pod>>,
+    view: table::Filtered,
 }
 
 #[bon::bon]
@@ -82,8 +86,8 @@ impl Shell {
 }
 
 impl Widget for Shell {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
-        self.view.dispatch(event, area)
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        self.view.dispatch(event, buffer, area)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
@@ -131,20 +135,21 @@ impl Command {
         Box::new(move |idx, filter| {
             let containers = pod.containers(filter);
 
-            Ok(Box::new(Command::new(
+            Ok(Command::new(
                 client.clone(),
                 pod.clone(),
                 containers.get(idx).unwrap().clone(),
-            )))
+            )
+            .boxed())
         })
     }
 
-    fn dispatch_input(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch_input(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         let CommandState::Input(ref mut txt) = self.state else {
             return Ok(Broadcast::Ignored);
         };
 
-        propagate!(txt.dispatch(event, area));
+        propagate!(txt.dispatch(event, buffer, area));
 
         let cmd = txt
             .content()
@@ -195,8 +200,8 @@ impl Command {
 }
 
 impl Widget for Command {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
-        propagate!(self.dispatch_input(event, area));
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        propagate!(self.dispatch_input(event, buffer, area));
 
         match event {
             Event::Finished(result) => Ok(result

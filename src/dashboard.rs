@@ -1,11 +1,17 @@
 use std::time::Duration;
 
 use bon::builder;
-use eyre::{Report, Result};
+use eyre::{eyre, Report, Result};
 use futures::TryStreamExt;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
-use ratatui::{backend::Backend as BackendTrait, layout::Position, widgets::Clear, Terminal};
+use ratatui::{
+    backend::Backend as BackendTrait,
+    buffer::Buffer,
+    layout::{Position, Rect},
+    widgets::Clear,
+    Terminal,
+};
 use replace_with::replace_with_or_abort;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -172,9 +178,12 @@ async fn run(
                 let raw_result =
                     draw_raw(raw_widget, &mut term, &mut rx, stdout.non_blocking()).await;
 
+                let area = term.get_frame().area();
+
                 let result = current_widget.dispatch(
                     &Event::Finished(raw_result.map_err(|e| StringError(format!("{e:?}")))),
-                    term.get_frame().area(),
+                    term.get_frame().buffer_mut(),
+                    area,
                 )?;
 
                 state.ui();
@@ -190,6 +199,7 @@ async fn run(
             Broadcast::Raw(widget) => {
                 state.raw(widget);
             }
+            Broadcast::Consumed => interval.reset_immediately(),
             _ => {}
         }
     }
@@ -212,25 +222,40 @@ fn draw_ui<W>(
 where
     W: std::io::Write + Send,
 {
-    let result = match ev {
+    let mut result = Err(eyre!("no dispatch"));
+
+    term.try_draw(|frame| {
+        let area = frame.area();
+
+        let draw_result = widget
+            .draw(frame, area)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e:?}")));
+
+        result = dispatch(widget, ev, frame.buffer_mut(), area);
+
+        draw_result
+    })?;
+
+    result
+}
+
+fn dispatch(
+    widget: &mut Box<dyn Widget>,
+    ev: &Event,
+    buffer: &Buffer,
+    area: Rect,
+) -> Result<Broadcast> {
+    match ev {
         Event::Input(Input { key, .. }) => {
             if matches!(key, Keypress::Control('c')) {
                 return Ok(Broadcast::Exited);
             }
 
-            widget.dispatch(ev, term.get_frame().area())
+            widget.dispatch(ev, buffer, area)
         }
         Event::Render => Ok(Broadcast::Ignored),
-        _ => widget.dispatch(ev, term.get_frame().area()),
-    };
-
-    term.draw(|frame| {
-        if let Err(err) = widget.draw(frame, frame.area()) {
-            panic!("{err}");
-        }
-    })?;
-
-    result
+        _ => widget.dispatch(ev, buffer, area),
+    }
 }
 
 async fn draw_raw(

@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use eyre::Result;
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Rect},
     Frame,
 };
@@ -45,7 +46,7 @@ impl Tunnel {
 }
 
 impl Widget for Tunnel {
-    fn dispatch(&mut self, event: &Event, _: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, _: Rect) -> Result<Broadcast> {
         Ok(match event {
             Event::Tunnel(Err(err)) => {
                 let tun = err.tunnel.clone().into_error();

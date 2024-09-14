@@ -1,5 +1,9 @@
 # TODO
 
+- Panic handling needs some help. The server doesn't shut down, which is good -
+  but it also doesn't disconnect, or tell the user anything - which is bad.
+  There's also zero info output on panic using the dev dashboard.
+
 - Implement multi-cluster.
 
 ## Documentation
@@ -34,6 +38,18 @@
 - Move over to axum for health instead of warp.
 
 ## TUI
+
+- There's some kind of lag happening when scrolling aggressively (aka, holding
+  down a cursor). It goes fine for ~10 items and then has a hitch in the
+  rendering.
+
+- Terminal resizing isn't wired up for the dev dashboard.
+
+- The way that layers work would be better served by something with ndarray. In
+  particular, calculating what the area of a widget would be is ugly.
+
+- Add an error screen if the ready channel is closed with an error. See
+  widget/pod.rs.
 
 - Add routing back in.
 

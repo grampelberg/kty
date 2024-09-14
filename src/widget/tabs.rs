@@ -68,7 +68,7 @@ impl TabbedView {
 }
 
 impl Widget for TabbedView {
-    fn dispatch(&mut self, event: &Event, area: Rect) -> Result<Broadcast> {
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         if let Event::Goto(route) = event {
             if !route.is_empty() {
                 self.scroll(route[0].parse::<usize>()?);
@@ -78,7 +78,7 @@ impl Widget for TabbedView {
         }
 
         propagate!(
-            self.current.dispatch(event, area),
+            self.current.dispatch(event, buffer, area),
             // TODO: this isn't a great solution, it effectively means that if the middle tab has
             // an error, you can never get to the last tab. It should be possible to navigate
             // between things when an error is displayed. This gets weird though when you think
@@ -91,7 +91,7 @@ impl Widget for TabbedView {
         };
 
         if let Some(Movement::X(x)) = move_cursor(key, area) {
-            self.scroll(self.idx.saturating_add_signed(x as isize));
+            self.scroll(self.idx.wrapping_add_signed(x as isize));
 
             return Ok(Broadcast::Consumed);
         }

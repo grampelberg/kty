@@ -1,31 +1,33 @@
-use std::time::Instant;
+use std::{
+    iter::once,
+    time::{Duration, Instant},
+};
 
 use eyre::Result;
+use itertools::Itertools;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    text::Text,
+    widgets::Paragraph,
     Frame,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
-use super::Widget;
+use super::{Placement, Widget};
+
+static RANGE: usize = 30;
 
 pub struct Fps {
-    start: Instant,
-    frames: i32,
-
-    period: AllocRingBuffer<i32>,
+    last: Instant,
+    period: AllocRingBuffer<Duration>,
 }
 
 impl Default for Fps {
     fn default() -> Self {
-        let mut period = AllocRingBuffer::new(5);
+        let mut period = AllocRingBuffer::new(RANGE);
         period.fill_default();
 
         Self {
-            start: Instant::now(),
-            frames: 0,
-
+            last: Instant::now(),
             period,
         }
     }
@@ -35,21 +37,27 @@ impl Widget for Fps {
     #[allow(clippy::cast_possible_wrap)]
     #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        self.frames += 1;
+        let elapsed = self.last.elapsed();
+        self.period.push(elapsed);
+        self.last = Instant::now();
 
-        let now = Instant::now();
-        let elapsed = (now - self.start).as_secs_f64();
-        if elapsed >= 1.0 {
-            self.start = now;
-            self.period.push(self.frames);
-            self.frames = 0;
-        }
-
-        let fps = self.period.iter().sum::<i32>() / self.period.len() as i32;
-
-        frame.render_widget(Text::from(format!("FPS: {fps}")), area);
+        frame.render_widget(
+            Paragraph::new(format!(
+                "FPS: {}\nLast: {}ms",
+                self.period.rate(),
+                elapsed.as_millis()
+            )),
+            area,
+        );
 
         Ok(())
+    }
+
+    fn placement(&self) -> Placement {
+        Placement {
+            vertical: Constraint::Length(2),
+            ..Default::default()
+        }
     }
 }
 
@@ -74,18 +82,19 @@ impl Widget for Debug {
             Constraint::Length(3),
         ])
         .areas(area);
-        let [_, area, _] = Layout::vertical([
-            Constraint::Fill(0),
-            Constraint::Length(self.widgets.len() as u16),
-            Constraint::Length(3),
-        ])
-        .areas(area);
 
-        let component_areas =
-            Layout::vertical(vec![Constraint::Length(1); self.widgets.len()]).split(area);
+        let vertical = Layout::vertical(
+            once(Constraint::Fill(0))
+                .chain(self.widgets.iter().map(|w| w.placement().vertical))
+                .chain(once(Constraint::Length(3)))
+                .collect::<Vec<_>>(),
+        )
+        .split(area);
 
-        for (i, widget) in self.widgets.iter_mut().enumerate() {
-            widget.draw(frame, component_areas[i])?;
+        let components_areas = vertical.iter().dropping(1).dropping_back(1);
+
+        for (widget, area) in self.widgets.iter_mut().zip(components_areas) {
+            widget.draw(frame, *area)?;
         }
 
         Ok(())
@@ -93,5 +102,16 @@ impl Widget for Debug {
 
     fn zindex(&self) -> u16 {
         1
+    }
+}
+
+trait BufferRate {
+    fn rate(&self) -> f64;
+}
+
+impl BufferRate for AllocRingBuffer<Duration> {
+    #[allow(clippy::cast_precision_loss)]
+    fn rate(&self) -> f64 {
+        RANGE as f64 / self.iter().sum::<Duration>().as_secs_f64()
     }
 }
