@@ -5,7 +5,7 @@ use ratatui::{
     layout::Rect,
     prelude::*,
     style::Style,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -84,6 +84,7 @@ impl Widget for Error {
         ])
         .areas(area);
 
+        frame.render_widget(Clear, vert);
         frame.render_widget(pg, vert);
 
         Ok(())
