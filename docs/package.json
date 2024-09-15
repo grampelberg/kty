@@ -19,6 +19,11 @@
   },
   "homepage": "https://github.com/grampelberg/kty#readme",
   "dependencies": {
+    "@iconify-json/carbon": "^1.2.1",
+    "@iconify-json/line-md": "^1.2.1",
+    "@iconify-json/logos": "^1.2.0",
+    "@iconify-json/material-symbols": "^1.2.1",
+    "@iconify-json/mdi": "^1.2.0",
     "@theguild/remark-mermaid": "^0.1.2",
     "next": "^14.2.9",
     "next-themes": "^0.3.0",
