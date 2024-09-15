@@ -209,6 +209,11 @@ async fn run(
         frame.set_cursor_position(Position::default());
     })?;
 
+    // This is a somewhat arbitrary sleep to allow for a flush to happen before the
+    // channel is shutdown. It seems that this isn't required locally, but when
+    // running from a cluster it needs a little bit of time.
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
     stdout.shutdown("exiting...".to_string()).await?;
 
     Ok(())
