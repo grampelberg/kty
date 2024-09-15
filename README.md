@@ -27,7 +27,7 @@ Google to verify your identity. Kubernetes RBAC validates access, just like
 
 Visit the [docs](https://kty.dev) to get started!
 
-![demo](./assets/demo.gif)
+![demo](./docs/public/demo.gif)
 
 ## Releases
 
