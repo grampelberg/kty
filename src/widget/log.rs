@@ -151,13 +151,11 @@ impl Widget for Log {
             }
         }
 
-        frame.render_stateful_widget_ref(
-            Viewport::builder().buffer(&self.buffer).build(),
-            area,
-            &mut self.position,
-        );
-
-        Ok(())
+        Viewport::builder()
+            .buffer(&self.buffer)
+            .view(self.position)
+            .build()
+            .draw(frame, area)
     }
 }
 
