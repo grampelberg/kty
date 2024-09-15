@@ -4,7 +4,7 @@
 
 To get to the dashboard, you can run:
 
-```bash
+```bash copy
 ssh anything@my-remote-host-or-ip -p 2222
 ```
 
@@ -19,7 +19,7 @@ cluster. The supported resources are `nodes`, `pods` and `services`. See the
 
 To forward port 9090 on your local system to 80 on the cluster, you can run:
 
-```bash
+```bash copy
 ssh me@my-cluster -p 2222 -L 9090:service/default/remote-service:80
 ```
 
@@ -32,13 +32,13 @@ not namespaced, the format is `<resource>/<name>`.
 Unlike the API server proxy, this works for any TCP service and is not limited
 to HTTP/HTTPS. For example, you can ssh directly to a node in the cluster with:
 
-```bash
+```bash copy
 ssh me@my-cluster -p 2222 -L 3333:no/my-node:22
 ```
 
 With that running in one terminal, you can run this in another:
 
-```bash
+```bash copy
 ssh my-node-username@localhost -p 3333
 ```
 
@@ -49,7 +49,7 @@ You can forward a remote service on your cluster to a port on your local host.
 To forward port 8080 on service `default/kty` to port `9090` on your local
 system, you can run:
 
-```bash
+```bash copy
 ssh me@my-cluster -p 2222 -R default/kty:8080:localhost:9090
 ```
 
@@ -59,13 +59,13 @@ The format for service definitions is `<namespace>/<service-name>`.
 
 The cluster is represented by a file tree:
 
-```bash
+```bash copy
 /<namespace>/<pod-name>/<container-name>/<file-path>
 ```
 
 For the `nginx` pod running in `default`, you would do something like:
 
-```bash
+```bash copy
 scp -P 2222 me@localhost:/default/nginx/nginx/etc/hosts /tmp
 ```
 

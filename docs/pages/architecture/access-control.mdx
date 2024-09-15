@@ -55,7 +55,7 @@ There are two ways for an incoming SSH session to get a user identity:
 To validate that a user has access, you can use the `kty users check` command.
 This is a great way to debug why users are not being allowed to connect.
 
-```bash
+```bash copy
 kty users check foo@bar.com
 ```
 
@@ -66,7 +66,7 @@ bindings added to the cluster. The `kty users grant` command is one way to go
 about this, but it is purposely naive. To do something more flexible, you can
 check out `kubectl`:
 
-```bash
+```bash copy
 kubectl create clusterrolebinding foo-bar-com --clusterrole=<my-role> --user=foo@bar.com
 ```
 

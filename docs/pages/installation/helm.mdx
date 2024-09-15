@@ -5,7 +5,7 @@ import { Callout } from 'nextra/components'
 There is a provided `getting-started.yaml` set of values. To install this on
 your cluster, you can run:
 
-```bash
+```bash copy
 helm install kty oci://ghcr.io/grampelberg/helm/kty \
   -n kty --create-namespace \
   --version $(curl -L https://api.github.com/repos/grampelberg/kty/tags | jq -r '.[0].name' | cut -c2-) \
@@ -15,7 +15,7 @@ helm install kty oci://ghcr.io/grampelberg/helm/kty \
 Note: this exposes the kty service externally by default. To get that IP
 address, you can run:
 
-```bash
+```bash copy
 kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
