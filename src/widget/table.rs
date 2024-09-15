@@ -258,8 +258,13 @@ impl Widget for Filtered {
         if let Some(Keypress::Printable('/')) = event.key() {
             TABLE_FILTER.inc();
 
-            self.view
-                .push(Text::builder().title("Filter").build().boxed());
+            self.view.push(
+                Text::builder()
+                    .title("Filter")
+                    .content(self.filter.clone())
+                    .build()
+                    .boxed(),
+            );
 
             return Ok(Broadcast::Consumed);
         }

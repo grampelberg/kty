@@ -57,7 +57,11 @@ impl Widget for Text {
         };
 
         match key {
-            exit_keys!() => return Ok(Broadcast::Exited),
+            exit_keys!() => {
+                self.content.try_borrow_mut()?.take();
+
+                return Ok(Broadcast::Exited);
+            }
             Keypress::Printable(x) => {
                 self.content
                     .try_borrow_mut()?
@@ -127,5 +131,12 @@ impl Widget for Text {
         frame.set_cursor_position(Position::new(cmd_pos.x + self.pos, cmd_pos.y));
 
         Ok(())
+    }
+
+    fn placement(&self) -> super::Placement {
+        super::Placement {
+            vertical: super::Constraint::Length(3),
+            ..Default::default()
+        }
     }
 }
