@@ -25,7 +25,7 @@ As part of this getting started guide, you will:
 Binares are available on the [releases page][cli-download]. If you have
 homebrew, you can install with:
 
-```bash
+```bash copy
 brew install grampelberg/kty/kty
 ```
 
@@ -47,7 +47,7 @@ In this example, we're using `cluster-admin` because it is everywhere and an
 easy way to get started. You can change this to another role, anything with the
 [minimum permissions](/architecture/access-control#authorization) in fact. Run:
 
-```bash
+```bash copy
 kty users grant cluster-admin me@example.com
 ```
 
@@ -59,14 +59,14 @@ kty users grant cluster-admin me@example.com
 You can verify that this worked and you have the minimum permissions required by
 running:
 
-```bash
+```bash copy
 kty users check me@example.com
 ```
 
 This command runs a `SelfSubjectAccessReview` against your cluster. If you want
 to use `kubectl` instead, you can run:
 
-```bash
+```bash copy
 kubectl auth can-i list pods --as me@example.com
 ```
 
@@ -76,7 +76,7 @@ While it isn't required that you run `kty` on your cluster, it takes care of the
 dependencies. To install the server and associated configuration such as
 `ClusterRole` and `Service` resources, run:
 
-```bash
+```bash copy
 kubectl create ns kty && \
   kty resources install -n kty
 ```
@@ -94,7 +94,7 @@ To clean these resources up, you can run `kty resources delete -n kty`.
 Verify that this is up and running successfully by checking that the pod has
 started up:
 
-```bash
+```bash copy
 kubectl -n kty rollout status deploy server
 ```
 
@@ -102,7 +102,7 @@ Once the pod has started up, you'll want to make sure there's an IP address that
 can be reached. This will also add `cluster.kty.dev` to your `/etc/hosts` file
 so that it is easy to get to the server in the future.
 
-```bash
+```bash copy
 kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
   | awk '{print $1 " cluster.kty.dev"}' \
   | sudo tee -a /etc/hosts
@@ -113,7 +113,7 @@ kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingre
 If the load balancer isn't getting a public IP address, there's other ways to
 connect to the server. You can port forward using `kubectl`:
 
-```bash
+```bash copy
 kubectl -n kty port-forward service/server 2222:2222
 ```
 
@@ -124,7 +124,7 @@ see what you can do with kty.
 
 ## Test it out
 
-```bash
+```bash copy
 ssh -p 2222 me@cluster.kty.dev
 ```
 
@@ -136,7 +136,7 @@ ssh -p 2222 me@cluster.kty.dev
 
 - `scp` some files out of a container:
 
-  ```bash
+  ```bash copy
   scp -P 2222 me@cluster.kty.dev:/default/my-pod/etc/hosts /tmp
   ```
 
