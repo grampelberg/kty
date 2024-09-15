@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-slim-bookworm AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.80.1-slim-bookworm AS chef
 WORKDIR /app
 RUN apt-get update && apt-get install -y wget gpg lsb-release && \
     wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' \
