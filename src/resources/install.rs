@@ -58,6 +58,7 @@ pub fn list() -> Result<serde_json::Value> {
 
 pub fn add_patches(
     namespace: &str,
+    image: &str,
     mut resources: serde_json::Value,
 ) -> Result<Vec<DynamicObject>> {
     let mut patches: Vec<_> = RawDefinitions::iter()
@@ -74,6 +75,12 @@ pub fn add_patches(
         "op": "replace",
         "path": "/binding-yaml/subjects/0/namespace",
         "value": namespace,
+    }))?);
+
+    patches.push(from_value(json!({
+        "op": "replace",
+        "path": "/server-yaml/spec/template/spec/containers/0/image",
+        "value": image,
     }))?);
 
     let KeyPair::Ed25519(key) = KeyPair::generate_ed25519().expect("key was generated") else {
