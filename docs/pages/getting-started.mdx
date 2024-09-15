@@ -108,7 +108,7 @@ kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingre
 <Callout type="warning">
 
 If the load balancer isn't getting a public IP address, there's other ways to
-connect to the server. On way is to port forward using `kubectl`:
+connect to the server. You can port forward using `kubectl`:
 
 ```bash
 kubectl -n kty port-forward service/server 2222:2222
@@ -122,18 +122,20 @@ see what you can do with kty.
 ## Test it out
 
 ```bash
-ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 me@localhost
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 \
+  me@$(kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}')
 ```
 
 ## Next Steps
 
-- Exec into a pod. Select the pod you want and go to the `Shell` tab. You'll be
-  able to pick the command to exec and then be shell'd into the pod directly.
+- Exec into a pod. You can use VI keybindings to navigate and enter to select
+  the pod you want. Go to the `Shell` tab and you'll be able to pick the command
+  to exec and then be shell'd into the pod directly.
 
 - `scp` some files out of a container:
 
   ```bash
-  scp -P 2222 me@localhost:/default/my-pod/etc/hosts /tmp
+  scp -P 2222 me@kty.my-cluster.dev:/default/my-pod/etc/hosts /tmp
   ```
 
 - Check out [usage](/usage) for more information on everything that you can do.

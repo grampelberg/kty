@@ -67,10 +67,6 @@
   default? How do we do a viewport over a set of lines that require history to
   do highlighting?
 
-- Is there a way to do FPS on a per-session basis with prometheus? Naively the
-  way to do it would be to have a per-session label value, but that would be
-  crazy for cardinality.
-
 - There's a bug somewhere in `log_stream`. My k3d cluster restarted and while I
   could get all the logs, the stream wouldn't keep running - it'd terminate
   immediately. `stern` seemed to be working fine. Recreating the cluster caused
@@ -88,6 +84,9 @@
   logs are particularly expensive to show right now as the default fetches
   _everything_ into memory (but doesn't try to render the entire thing every
   100ms).
+
+- Animate the egress/ingress tunnel lines. In particular, it would be nice to
+  watch `Active` fade to `Listening` after a request goes through.
 
 ## SFTP
 

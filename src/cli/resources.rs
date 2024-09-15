@@ -10,6 +10,8 @@ use serde::Serialize;
 use super::namespace;
 use crate::resources::{install, DynamicClient, GetGvk, MANAGER};
 
+const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+
 #[derive(Parser, Container)]
 pub struct Resources {
     #[command(subcommand)]
@@ -62,7 +64,7 @@ impl Command for Delete {
 
         let namespace = namespace(self.namespace.as_ref()).await?;
 
-        let resources = install::add_patches(namespace.as_str(), install::list()?)?;
+        let resources = install::add_patches(namespace.as_str(), "", install::list()?)?;
 
         for resource in resources {
             let gvk = resource.gvk()?;
@@ -88,6 +90,9 @@ pub struct Install {
 
     #[arg(from_global)]
     namespace: Option<String>,
+
+    #[arg(long, default_value_t = format!("ghcr.io/grampelberg/kty:{}", VERSION.unwrap_or("latest")))]
+    image: String,
 }
 
 #[async_trait::async_trait]
@@ -97,7 +102,8 @@ impl Command for Install {
     async fn run(&self) -> Result<()> {
         let namespace = namespace(self.namespace.as_ref()).await?;
 
-        let resources = install::add_patches(namespace.as_str(), install::list()?)?;
+        let resources =
+            install::add_patches(namespace.as_str(), self.image.as_str(), install::list()?)?;
 
         if self.dry_run {
             let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
