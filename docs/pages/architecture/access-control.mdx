@@ -15,27 +15,26 @@ from that point forward uses the users' permissions as granted via. RBAC in k8s.
 ## Flow
 
 ```mermaid
-flowchart TD
-    subgraph start [" "]
-    conn[ ] --> Authentication
-    end
-    subgraph Authentication
-    IsKey{Public key registered?} --> |Yes| Authn
-    IsKey --> |No| SendCode
-    SendCode[Provide OpenID Link] --> CheckCode
-    CheckCode{Got Oauth Token?} --> |Valid| Authn
-    CheckCode --> |Invalid| SendCode
-    Authn[Identity authenticated]
-    end
-    subgraph Authorization
-    Impersonate[Impersonate user] --> CheckAuthz
-    CheckAuthz{Can list pods?} --> |Yes| Authz
-    CheckAuthz --> |No| Authentication
-    Authz[User authorized with kubernetes]
-    end
-    Authentication --> Authorization
-    style start fill:none,stroke:none
-    style conn fill:none,stroke:none
+sequenceDiagram;
+    actor U as User;
+    participant S as kty;
+    participant C as Kubernetes;
+    participant P as OpenID Provider;
+
+    U->>S: Public Key;
+    S-->>C: Key resource exists?;
+
+    C-->>S: Unknown;
+    S->>P: Get OpenID Link;
+    P->>U: Display QR Code;
+    U->>P: Verify Identity;
+    S-->>P: Valid Token?;
+    P->>S: me@my-cluster.com;
+
+    Note over S,C: Impersonate me@my-cluster.com;
+    S-->>C: Can list pods?;
+    C-->>S: Yes;
+    S->>U: Dashboard;
 ```
 
 ## Authentication

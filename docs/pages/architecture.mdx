@@ -1,3 +1,5 @@
+import { Mermaid } from '@theguild/remark-mermaid/mermaid'
+
 # Architecture
 
 kty is a standalone SSH server which provides much of the standard SSH
@@ -20,6 +22,28 @@ permissions itself. Based on the user's permissions granted with RBAC, the
 server acts on the user's behalf based on what the SSH session is telling it to
 do. This is effectively the same thing that `kubectl` does with authentication
 plugins, just without the plugin or `kubectl` binary involved.
+
+<Mermaid chart={`
+architecture-beta
+    group cluster(carbon:kubernetes-worker-node)[Kubernetes]
+
+    service user(line-md:laptop-twotone)[SSH]
+
+    service kty(mdi:server-outline)[kty] in cluster
+    service api(carbon:api-1)[API Server] in cluster
+    service pod(material-symbols:stacks-outline-rounded)[Pods] in cluster
+
+    service lb(carbon:load-balancer-global)[Load Balancer]
+
+    service openid(mdi:openid)[OpenID Provider]
+
+    lb:B --> T:kty
+    kty:L --> R:api
+    kty:R --> L:pod
+    user:R --> L:lb
+    kty:B --> T:openid
+
+`}></Mermaid>
 
 ## How it works
 
@@ -203,3 +227,7 @@ Client functionality used:
   becomes extremely expensive to understand what an individual user can see
   across the entire cluster. This will be updated in the future but requires
   namespaces to be available via UI elements.
+
+```
+
+```
