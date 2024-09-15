@@ -22,7 +22,7 @@ use super::{
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
-    fx::{right_to_left, Animated},
+    fx::Animated,
 };
 
 lazy_static! {
@@ -238,14 +238,11 @@ impl Filtered {
         let widget = (self.constructor)(idx, self.filter.borrow().clone())?;
 
         let detail = Animated::builder()
-            .maybe_effect(frame.map(|buffer| {
-                fx::parallel(&[
-                    fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
-                    right_to_left(
-                        EffectTimer::from_ms(500, Interpolation::SineInOut),
-                        buffer.clone(),
-                    ),
-                ])
+            .maybe_effect(frame.map(|_| {
+                fx::parallel(&[fx::coalesce(EffectTimer::from_ms(
+                    500,
+                    Interpolation::SineInOut,
+                ))])
             }))
             .widget(widget)
             .build();

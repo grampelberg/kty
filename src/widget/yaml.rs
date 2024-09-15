@@ -91,7 +91,10 @@ impl Yaml {
     where
         K: Resource<DynamicType = ()> + Serialize + Send + Sync + 'static,
     {
-        Tab::new(name, Box::new(move || Box::new(Self::new(&resource))))
+        Tab::builder()
+            .name(name)
+            .constructor(Box::new(move || Self::new(&resource).boxed()))
+            .build()
     }
 }
 

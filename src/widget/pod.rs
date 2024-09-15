@@ -107,12 +107,13 @@ impl Detail {
     fn new(client: &kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.pod.detail.inc();
 
-        let view = TabbedView::new(vec![
-            Yaml::tab("Overview".to_string(), pod.clone()),
-            Log::tab("Logs".to_string(), client.clone(), pod.clone()),
-            Shell::tab("Shell".to_string(), client.clone(), pod.clone()).no_margin(),
-        ])
-        .unwrap();
+        let view = TabbedView::builder()
+            .tabs(vec![
+                Yaml::tab("Overview".to_string(), pod.clone()),
+                Log::tab("Logs".to_string(), client.clone(), pod.clone()),
+                Shell::tab("Shell".to_string(), client.clone(), pod.clone()),
+            ])
+            .build();
 
         Self { pod, view }
     }

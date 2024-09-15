@@ -1,143 +1,201 @@
-use eyre::{eyre, Result};
+use bon::Builder;
+use eyre::Result;
 use ratatui::{
-    layout::Rect,
-    prelude::*,
+    buffer::Buffer,
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{Block, Borders, Paragraph},
+    text::Text,
+    widgets::{Block, Borders},
     Frame,
 };
+use tachyonfx::{fx, EffectTimer, Interpolation};
 
-use super::{error::Error, propagate, Widget};
+use super::{error::Error, view::View, Placement, Widget};
 use crate::{
     events::{Broadcast, Event},
+    fx::{horizontal_wipe, Animated, Start},
     widget::nav::{move_cursor, Movement},
 };
 
+#[derive(Builder)]
 pub struct Tab {
     name: String,
-    widget: Box<dyn Fn() -> Box<dyn Widget> + Send>,
-    margin: u16,
+    constructor: Box<dyn Fn() -> Box<dyn Widget> + Send>,
 }
 
 impl Tab {
-    pub fn new(name: String, widget: Box<dyn Fn() -> Box<dyn Widget> + Send>) -> Self {
-        Self {
-            name,
-            widget,
-            margin: 2,
-        }
-    }
-
-    pub fn no_margin(mut self) -> Self {
-        self.margin = 0;
-        self
-    }
-
     pub fn widget(&self) -> Box<dyn Widget> {
-        (self.widget)()
+        (self.constructor)()
     }
 }
 
-pub struct TabbedView {
-    items: Vec<Tab>,
-
-    selected_style: Style,
+struct Bar {
+    items: Vec<String>,
+    style: Style,
 
     idx: usize,
-    current: Box<dyn Widget>,
 }
 
-impl TabbedView {
-    pub fn new(tabs: Vec<Tab>) -> Result<Self> {
-        if tabs.is_empty() {
-            return Err(eyre!("Tabs must not be empty"));
-        }
+impl Bar {
+    fn new(items: &[Tab], style: Style) -> Self {
+        Self {
+            items: items.iter().map(|tab| tab.name.clone()).collect(),
+            style,
 
-        Ok(Self {
-            current: tabs[0].widget(),
             idx: 0,
-            items: tabs,
-            selected_style: Style::default().add_modifier(Modifier::REVERSED),
-        })
-    }
-
-    pub fn scroll(&mut self, idx: usize) {
-        self.idx = idx.clamp(0, self.items.len().saturating_sub(1));
-        self.current = self.items[self.idx].widget();
+        }
     }
 }
 
-impl Widget for TabbedView {
-    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        if let Event::Goto(route) = event {
-            if !route.is_empty() {
-                self.scroll(route[0].parse::<usize>()?);
-            }
-
-            return Ok(Broadcast::Consumed);
-        }
-
-        propagate!(
-            self.current.dispatch(event, buffer, area),
-            // TODO: this isn't a great solution, it effectively means that if the middle tab has
-            // an error, you can never get to the last tab. It should be possible to navigate
-            // between things when an error is displayed. This gets weird though when you think
-            // about scrolling the error dialog.
-            self.scroll(self.idx.saturating_sub(1))
-        );
-
+impl Widget for Bar {
+    fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
         };
 
         if let Some(Movement::X(x)) = move_cursor(key, area) {
-            self.scroll(self.idx.wrapping_add_signed(x as isize));
+            self.idx = self
+                .idx
+                // TODO: this isn't a great solution, it effectively means that if the middle tab
+                // has an error, you can never get to the last tab. It should be
+                // possible to navigate between things when an error is displayed.
+                // This gets weird though when you think about scrolling the error
+                // dialog.
+                .wrapping_add_signed(x.into())
+                .clamp(0, self.items.len().saturating_sub(1));
 
-            return Ok(Broadcast::Consumed);
+            return Ok(Broadcast::Selected(self.idx));
         }
 
         Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let [tab_area, border, body_area] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
-
         let layout =
             Layout::horizontal(std::iter::repeat(Constraint::Fill(1)).take(self.items.len()))
                 .spacing(1)
-                .split(tab_area);
+                .split(area);
 
-        for (i, (tab, area)) in self.items.iter().zip(layout.iter()).enumerate() {
+        for (i, (area, title)) in layout.iter().zip(self.items.iter()).enumerate() {
             let style = if i == self.idx {
-                self.selected_style
+                self.style
             } else {
                 Style::default()
             };
 
             frame.render_widget(
-                Paragraph::new(tab.name.clone())
+                Text::from(title.as_str())
                     .style(style)
                     .alignment(Alignment::Center),
                 *area,
             );
         }
 
-        frame.render_widget(Block::default().borders(Borders::TOP), border);
+        Ok(())
+    }
 
-        let [nested] = Layout::default()
-            .constraints([Constraint::Min(0)])
-            .horizontal_margin(self.items[self.idx].margin)
-            .areas(body_area);
+    fn placement(&self) -> Placement {
+        Placement {
+            vertical: Constraint::Length(1),
+            ..Default::default()
+        }
+    }
+}
 
-        if let Err(err) = self.current.draw(frame, nested) {
-            self.current = Box::new(Error::from(err));
+pub struct TabbedView {
+    items: Vec<Tab>,
+
+    current: usize,
+    view: View,
+}
+
+#[bon::bon]
+impl TabbedView {
+    #[builder]
+    pub fn new(
+        tabs: Vec<Tab>,
+        #[builder(default = Style::default().add_modifier(Modifier::REVERSED))] style: Style,
+    ) -> Self {
+        let mut widgets = vec![
+            Bar::new(&tabs, style).boxed(),
+            Divider::builder().build().boxed(),
+        ];
+
+        if !tabs.is_empty() {
+            widgets.push(tabs[0].widget());
+        }
+
+        Self {
+            view: View::builder().widgets(widgets).build(),
+            current: 0,
+            items: tabs,
+        }
+    }
+}
+
+impl Widget for TabbedView {
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        match self.view.dispatch(event, buffer, area)? {
+            Broadcast::Selected(idx) => {
+                let start = if self.current < idx {
+                    Start::Left
+                } else {
+                    Start::Right
+                };
+
+                // TODO: this is *probably* a valid assumption, but it might need to be actually
+                // checked.
+                self.view.pop();
+                self.view.push(
+                    Animated::builder()
+                        .widget(self.items[idx].widget())
+                        .effect(fx::parallel(&[
+                            fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
+                            horizontal_wipe()
+                                .buffer(buffer.clone())
+                                .timer(EffectTimer::from_ms(500, Interpolation::SineInOut))
+                                .start(start)
+                                .call(),
+                        ]))
+                        .build()
+                        .boxed(),
+                );
+
+                Ok(Broadcast::Consumed)
+            }
+            broadcast => Ok(broadcast),
+        }
+    }
+
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        if let Err(err) = self.view.draw(frame, area) {
+            self.view.push(Error::from(err).boxed());
         }
 
         Ok(())
+    }
+}
+
+#[derive(Builder)]
+struct Divider {
+    #[builder(default = 0)]
+    margin: u16,
+}
+
+impl Widget for Divider {
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let [line, _] =
+            Layout::vertical(vec![Constraint::Length(1), Constraint::Length(1)]).areas(area);
+
+        frame.render_widget(Block::default().borders(Borders::BOTTOM), line);
+
+        Ok(())
+    }
+
+    fn placement(&self) -> Placement {
+        Placement {
+            vertical: Constraint::Length(self.margin + 1),
+            ..Default::default()
+        }
     }
 }
