@@ -53,6 +53,9 @@
 
 - Add routing back in.
 
+- Calculate visibility via areas + zindex to understand what needs to be
+  rendered instead of just assuming the view will set all or only the top layer.
+
 - It feels like it'd be nice to just try to run the default command and if it
   errors give the user the option to change. That way, going to the shell tab
   will ~immediately jump into the pod.
@@ -98,6 +101,8 @@
 ## SSH Functionality
 
 - Allow `ssh` directly into a pod without starting the dashboard.
+
+- How can `ssh` be shutdown without causing it to have a 1 as an exit code?
 
 ## Ingress Tunnel
 
