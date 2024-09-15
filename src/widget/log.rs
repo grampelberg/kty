@@ -85,10 +85,12 @@ impl Log {
     // TODO: This should be a macro. Ideally, it'd be a trait with a default impl
     // but I don't think it is possible to do generically.
     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
-        Tab::new(
-            name,
-            Box::new(move || Box::new(Log::new(client.clone(), pod.clone()))),
-        )
+        Tab::builder()
+            .name(name)
+            .constructor(Box::new(move || {
+                Log::new(client.clone(), pod.clone()).boxed()
+            }))
+            .build()
     }
 
     fn update(&mut self) -> u16 {

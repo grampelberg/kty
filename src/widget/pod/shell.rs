@@ -71,17 +71,16 @@ impl Shell {
     }
 
     pub fn tab(name: String, client: kube::Client, pod: Arc<Pod>) -> Tab {
-        Tab::new(
-            name,
-            Box::new(move || {
-                Box::new(
-                    Self::builder()
-                        .client(client.clone())
-                        .pod(pod.clone())
-                        .build(),
-                )
-            }),
-        )
+        Tab::builder()
+            .name(name)
+            .constructor(Box::new(move || {
+                Self::builder()
+                    .client(client.clone())
+                    .pod(pod.clone())
+                    .build()
+                    .boxed()
+            }))
+            .build()
     }
 }
 
