@@ -143,6 +143,8 @@ impl Widget for TabbedView {
                     Start::Right
                 };
 
+                self.current = idx;
+
                 // TODO: this is *probably* a valid assumption, but it might need to be actually
                 // checked.
                 self.view.pop();
