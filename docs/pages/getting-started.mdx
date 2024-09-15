@@ -99,10 +99,13 @@ kubectl -n kty rollout status deploy server
 ```
 
 Once the pod has started up, you'll want to make sure there's an IP address that
-can be reached:
+can be reached. This will also add `cluster.kty.dev` to your `/etc/hosts` file
+so that it is easy to get to the server in the future.
 
 ```bash
-kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+  | awk '{print $1 " cluster.kty.dev"}' \
+  | sudo tee -a /etc/hosts
 ```
 
 <Callout type="warning">
@@ -122,8 +125,7 @@ see what you can do with kty.
 ## Test it out
 
 ```bash
-ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 \
-  me@$(kubectl -n kty get service server --output=jsonpath='{.status.loadBalancer.ingress[0].ip}')
+ssh -p 2222 me@cluster.kty.dev
 ```
 
 ## Next Steps
@@ -135,7 +137,7 @@ ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -p 2222 \
 - `scp` some files out of a container:
 
   ```bash
-  scp -P 2222 me@kty.my-cluster.dev:/default/my-pod/etc/hosts /tmp
+  scp -P 2222 me@cluster.kty.dev:/default/my-pod/etc/hosts /tmp
   ```
 
 - Check out [usage](/usage) for more information on everything that you can do.

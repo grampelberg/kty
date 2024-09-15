@@ -19,6 +19,9 @@ const config: DocsThemeConfig = {
   project: {
     link: 'https://github.com/grampelberg/kty',
   },
+  chat: {
+    link: 'https://discord.gg/xMuN5csrQs',
+  },
   docsRepositoryBase: 'https://github.com/grampelberg/kty',
   footer: {
     content: (
