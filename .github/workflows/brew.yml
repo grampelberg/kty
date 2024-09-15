@@ -3,9 +3,7 @@ name: homebrew-releaser
 on:
   release:
     types:
-      - created
       - published
-      - released
 
 jobs:
   homebrew-releaser:
