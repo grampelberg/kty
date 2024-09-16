@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bon::builder;
+use bon::Builder;
 use eyre::{eyre, Report, Result};
 use futures::TryStreamExt;
 use lazy_static::lazy_static;
@@ -42,7 +42,7 @@ lazy_static! {
 static FPS: u16 = 10;
 pub static RENDER_INTERVAL: Duration = Duration::from_millis(1000 / FPS as u64);
 
-#[builder]
+#[derive(Builder)]
 pub struct Dashboard {
     client: kube::Client,
 }

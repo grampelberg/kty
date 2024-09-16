@@ -1,3 +1,4 @@
+mod agent;
 mod authz;
 mod dashboard;
 mod shell;
@@ -15,6 +16,7 @@ pub struct Dev {
 
 #[derive(Subcommand, Container)]
 enum DevCmd {
+    Agent(agent::Agent),
     Authz(authz::Authz),
     Dashboard(dashboard::Dashboard),
     Shell(shell::Shell),

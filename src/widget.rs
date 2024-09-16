@@ -5,6 +5,7 @@ pub mod input;
 pub mod loading;
 pub mod log;
 pub mod nav;
+pub mod node;
 pub mod pod;
 pub mod table;
 pub mod tabs;
@@ -15,7 +16,7 @@ pub mod yaml;
 
 use std::pin::Pin;
 
-use bon::builder;
+use bon::Builder;
 use eyre::Result;
 use lazy_static::lazy_static;
 use prometheus::{opts, register_int_counter_vec, IntCounterVec};
@@ -34,6 +35,7 @@ make_static_metric! {
         "resource" => {
             container,
             pod,
+            node,
         },
         "type" => {
             cmd,
@@ -58,7 +60,7 @@ lazy_static! {
     pub static ref WIDGET_VIEWS: WidgetVec = WidgetVec::from(&WIDGET_VIEWS_VEC);
 }
 
-#[builder]
+#[derive(Builder)]
 pub struct Placement {
     #[builder(default = Constraint::Fill(0))]
     pub horizontal: Constraint,

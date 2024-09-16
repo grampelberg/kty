@@ -39,6 +39,13 @@
 
 ## TUI
 
+- Is it possible to get the kubelet logs?
+
+- Use SSH forwarding to get into the nodes.
+
+  - Does it make sense to do the `nsenter` trick for some use cases? This
+    requires privileged mode to work.
+
 - There's some kind of lag happening when scrolling aggressively (aka, holding
   down a cursor). It goes fine for ~10 items and then has a hitch in the
   rendering.

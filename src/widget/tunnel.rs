@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use eyre::Result;
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Rect},
     Frame,
 };
 
@@ -14,12 +14,14 @@ use crate::{
 };
 
 pub struct Tunnel {
+    zindex: Rc<RefCell<u16>>,
+
     items: Rc<RefCell<BTreeMap<resources::Tunnel, resources::Tunnel>>>,
     table: table::Table<Rc<RefCell<BTreeMap<resources::Tunnel, resources::Tunnel>>>>,
 }
 
-impl Default for Tunnel {
-    fn default() -> Self {
+impl Tunnel {
+    pub fn new(zindex: Rc<RefCell<u16>>) -> Self {
         let items = Rc::new(RefCell::new(BTreeMap::new()));
 
         Self {
@@ -29,11 +31,10 @@ impl Default for Tunnel {
                 .highlight(false)
                 .items(items)
                 .build(),
+            zindex,
         }
     }
-}
 
-impl Tunnel {
     pub fn height(&self) -> u16 {
         if self.items.borrow().is_empty() {
             return 0;
@@ -69,6 +70,10 @@ impl Widget for Tunnel {
             return Ok(());
         }
 
+        let [_, area] =
+            Layout::vertical(vec![Constraint::Fill(0), Constraint::Length(self.height())])
+                .areas(area);
+
         self.table.draw(frame, area)
     }
 
@@ -77,6 +82,10 @@ impl Widget for Tunnel {
             horizontal: Constraint::Percentage(100),
             vertical: Constraint::Length(self.height()),
         }
+    }
+
+    fn zindex(&self) -> u16 {
+        *self.zindex.borrow()
     }
 }
 

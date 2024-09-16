@@ -86,7 +86,7 @@ impl Widget for Debug {
         let vertical = Layout::vertical(
             once(Constraint::Fill(0))
                 .chain(self.widgets.iter().map(|w| w.placement().vertical))
-                .chain(once(Constraint::Length(3)))
+                .chain(once(Constraint::Length(5)))
                 .collect::<Vec<_>>(),
         )
         .split(area);
@@ -101,7 +101,7 @@ impl Widget for Debug {
     }
 
     fn zindex(&self) -> u16 {
-        1
+        10
     }
 }
 

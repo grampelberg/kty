@@ -17,7 +17,7 @@ use super::{
     error::Error,
     input::Text,
     nav::{move_cursor, Movement},
-    view::View,
+    view::{Element, View},
     BoxWidget, Widget,
 };
 use crate::{
@@ -96,7 +96,7 @@ where
     style: Style,
     title: Option<String>,
     highlight: bool,
-    border: bool,
+    border: Borders,
 
     // Internal state
     items: S,
@@ -119,7 +119,7 @@ where
         #[builder(default = true)] selected: bool,
         items: S,
         #[builder(default)] filter: Rc<RefCell<Option<String>>>,
-        #[builder(default = true)] border: bool,
+        #[builder(default = Borders::ALL)] border: Borders,
     ) -> Self {
         let view = if selected {
             TableState::default().with_selected(0)
@@ -183,7 +183,7 @@ where
 
         let mut table = widgets::Table::new(rows, S::Item::constraints());
         let mut border = Block::default()
-            .borders(Borders::ALL)
+            .borders(self.border)
             .style(self.style.border);
 
         if self.highlight {
@@ -198,7 +198,7 @@ where
             border = border.title(title.as_str());
         };
 
-        if self.border {
+        if self.border != Borders::NONE {
             table = table.block(border);
         }
 
@@ -226,7 +226,12 @@ impl Filtered {
         Self {
             constructor,
             filter: table.filter(),
-            view: View::builder().widgets(vec![table.boxed()]).build(),
+            view: View::builder()
+                .widgets(vec![Element::builder()
+                    .widget(table.boxed())
+                    .terminal(true)
+                    .build()])
+                .build(),
         }
     }
 
@@ -247,7 +252,8 @@ impl Filtered {
             .widget(widget)
             .build();
 
-        self.view.push(detail.boxed());
+        self.view
+            .push(Element::builder().widget(detail.boxed()).build());
 
         Ok(())
     }
@@ -263,7 +269,8 @@ impl Widget for Filtered {
                     .title("Filter")
                     .content(self.filter.clone())
                     .build()
-                    .boxed(),
+                    .boxed()
+                    .into(),
             );
 
             return Ok(Broadcast::Consumed);
@@ -277,7 +284,7 @@ impl Widget for Filtered {
             }
             Ok(x) => Ok(x),
             Err(e) => {
-                self.view.push(Error::from(e).boxed());
+                self.view.push(Error::from(e).boxed().into());
 
                 Ok(Broadcast::Consumed)
             }
@@ -286,5 +293,9 @@ impl Widget for Filtered {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         self.view.draw(frame, area)
+    }
+
+    fn zindex(&self) -> u16 {
+        self.view.zindex()
     }
 }

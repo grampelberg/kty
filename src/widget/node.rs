@@ -1,25 +1,22 @@
-pub mod shell;
-
 use std::sync::Arc;
 
 use eyre::{eyre, Result};
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::Node;
 use kube::ResourceExt;
-use ratatui::{layout::Rect, prelude::*};
+use ratatui::{buffer::Buffer, layout::Rect, Frame};
 use tokio::sync::oneshot;
 
 use super::{
     loading::Loading,
-    log::Log,
     propagate, table,
     tabs::{Tab, TabbedView},
     view::{Element, View},
-    Placement, Widget, WIDGET_VIEWS,
+    yaml::Yaml,
+    Widget, WIDGET_VIEWS,
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
     resources::store::Store,
-    widget::{pod::shell::Shell, yaml::Yaml},
 };
 
 pub struct List {
@@ -27,16 +24,18 @@ pub struct List {
     is_ready: oneshot::Receiver<()>,
 }
 
+#[bon::bon]
 impl List {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(skip(client), fields(activity = "pod.list"))]
+    #[tracing::instrument(skip(client), fields(activity = "node.list"))]
+    #[builder]
     pub fn new(client: kube::Client) -> Self {
-        WIDGET_VIEWS.pod.list.inc();
+        WIDGET_VIEWS.node.list.inc();
 
-        let (pods, is_ready) = Store::new(client.clone());
+        let (nodes, is_ready) = Store::<Node>::new(client.clone());
         let table = table::Filtered::builder()
-            .table(table::Table::builder().items(pods.clone()).build())
-            .constructor(Detail::from_store(client, pods))
+            .table(table::Table::builder().items(nodes.clone()).build())
+            .constructor(Detail::from_store(client, nodes))
             .build();
 
         let widgets = vec![
@@ -58,7 +57,7 @@ impl List {
             .name(name)
             .constructor(Box::new(move || {
                 Element::builder()
-                    .widget(Self::new(client.clone()).boxed())
+                    .widget(Self::builder().client(client.clone()).build().boxed())
                     .terminal(terminal)
                     .build()
             }))
@@ -78,7 +77,6 @@ impl Widget for List {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        // TODO: add an error screen here if Err(TryRecvError::Closed)
         if let Ok(()) = self.is_ready.try_recv() {
             self.view.pop();
         }
@@ -86,52 +84,41 @@ impl Widget for List {
         self.view.draw(frame, area)
     }
 
-    fn placement(&self) -> Placement {
-        Placement {
-            horizontal: Constraint::Fill(0),
-            vertical: Constraint::Fill(0),
-        }
-    }
-
     fn zindex(&self) -> u16 {
         self.view.zindex()
     }
 }
 
-struct Detail {
+pub struct Detail {
     view: TabbedView,
 }
 
 #[bon::bon]
 impl Detail {
     #[builder]
-    #[allow(clippy::needless_pass_by_value)]
-    fn new(client: &kube::Client, pod: Arc<Pod>) -> Self {
-        WIDGET_VIEWS.pod.detail.inc();
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    pub fn new(client: kube::Client, node: Arc<Node>) -> Self {
+        WIDGET_VIEWS.node.detail.inc();
 
         let view = TabbedView::builder()
-            .tabs(vec![
-                Yaml::tab("Overview".to_string(), pod.clone()),
-                Log::tab("Logs".to_string(), client.clone(), pod.clone()),
-                Shell::tab("Shell".to_string(), client.clone(), pod.clone()),
-            ])
-            .title(vec![
-                "pods".to_string(),
-                pod.namespace().unwrap_or_default(),
-                pod.name_any(),
-            ])
+            .tabs(vec![Yaml::tab("YAML".to_string(), node.clone())])
+            .title(vec!["nodes".to_string(), node.name_any()])
             .build();
 
         Self { view }
     }
 
-    pub fn from_store(client: kube::Client, pods: Arc<Store<Pod>>) -> table::DetailFn {
+    pub fn from_store(client: kube::Client, store: Arc<Store<Node>>) -> table::DetailFn {
         Box::new(move |idx, filter| {
-            let pod = pods
+            let node = store
                 .get(idx, filter)
-                .ok_or_else(|| eyre!("pod not found"))?;
+                .ok_or_else(|| eyre!("node not found"))?;
 
-            Ok(Detail::builder().client(&client).pod(pod).build().boxed())
+            Ok(Detail::builder()
+                .client(client.clone())
+                .node(node)
+                .build()
+                .boxed())
         })
     }
 }

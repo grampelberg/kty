@@ -353,9 +353,9 @@ dependencies = [
 
 [[package]]
 name = "bon"
-version = "2.2.1"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee4f37d875011af3196e4828024742a84dcff6b0d027d272f2944f9a99f2c8af"
+checksum = "97493a391b4b18ee918675fb8663e53646fd09321c58b46afa04e8ce2499c869"
 dependencies = [
  "bon-macros",
  "rustversion",
@@ -363,9 +363,9 @@ dependencies = [
 
 [[package]]
 name = "bon-macros"
-version = "2.2.1"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99b4b686e7ebf76cfa591052482d8c3c8242722518560798631974bf899d5565"
+checksum = "2a2af3eac944c12cdf4423eab70d310da0a8e5851a18ffb192c0a5e3f7ae1663"
 dependencies = [
  "darling",
  "ident_case",
@@ -1887,9 +1887,9 @@ dependencies = [
 
 [[package]]
 name = "k8s-openapi"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19501afb943ae5806548bc3ebd7f3374153ca057a38f480ef30adfde5ef09755"
+checksum = "9c8847402328d8301354c94d605481f25a6bdc1ed65471fd96af8eca71141b13"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1964,9 +1964,9 @@ dependencies = [
 
 [[package]]
 name = "kube"
-version = "0.94.1"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be507d4aad98648b68e0857909332e2ef791befd4fd7b0076662831575417ea"
+checksum = "fa21063c854820a77c5d7f8deeb7ffa55246d8304e4bcd8cce2956752c6604f8"
 dependencies = [
  "k8s-openapi",
  "kube-client",
@@ -1977,9 +1977,9 @@ dependencies = [
 
 [[package]]
 name = "kube-client"
-version = "0.94.1"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a153c7ec9f08a2008e27284c60f7b4dd4f493053868cbe919a0db639a68ee421"
+checksum = "31c2355f5c9d8a11900e71a6fe1e47abd5ec45bf971eb4b162ffe97b46db9bb7"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2008,7 +2008,7 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tokio",
- "tokio-tungstenite 0.23.1",
+ "tokio-tungstenite 0.24.0",
  "tokio-util",
  "tower",
  "tower-http",
@@ -2017,9 +2017,9 @@ dependencies = [
 
 [[package]]
 name = "kube-core"
-version = "0.94.1"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "755a2f40ef78d317bde7829c7fc1f9d5b28b1233dfdebb0a9eeb7f738ba23bae"
+checksum = "f3030bd91c9db544a50247e7d48d7db9cf633c172732dce13351854526b1e666"
 dependencies = [
  "chrono",
  "form_urlencoded",
@@ -2035,9 +2035,9 @@ dependencies = [
 
 [[package]]
 name = "kube-derive"
-version = "0.94.1"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff83a9cdcf99dde68acd595658af4649eaed0933cae4235a0a33c52d2a5fe523"
+checksum = "fa98be978eddd70a773aa8e86346075365bfb7eb48783410852dbf7cb57f0c27"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2048,9 +2048,9 @@ dependencies = [
 
 [[package]]
 name = "kube-runtime"
-version = "0.94.1"
+version = "0.95.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7648b57fa599486132d065f09fcae0d7ea624fe48725c6627ef1d7ed07a1c3b6"
+checksum = "5895cb8aa641ac922408f128b935652b34c2995f16ad7db0984f6caa50217914"
 dependencies = [
  "ahash",
  "async-broadcast",
@@ -2125,14 +2125,14 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 
 [[package]]
 name = "local-ip-address"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b435d7dd476416a905f9634dff8c330cee8d3168fdd1fbd472a17d1a75c00c3e"
+checksum = "3669cf5561f8d27e8fc84cc15e58350e70f557d4d65f70e3154e54cd2f8e1782"
 dependencies = [
  "libc",
  "neli",
  "thiserror",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4273,14 +4273,14 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.23.1"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6989540ced10490aaf14e6bad2e3d33728a2813310a0c71d1574304c49631cd"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
 dependencies = [
  "futures-util",
  "log",
  "tokio",
- "tungstenite 0.23.0",
+ "tungstenite 0.24.0",
 ]
 
 [[package]]
@@ -4444,9 +4444,9 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.23.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e2e2ce1e47ed2994fd43b04c8f618008d4cabdd5ee34027cf14f9d918edd9c8"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
 dependencies = [
  "byteorder",
  "bytes",

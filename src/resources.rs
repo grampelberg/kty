@@ -2,6 +2,7 @@ pub mod age;
 pub mod container;
 pub mod file;
 pub mod install;
+pub mod node;
 pub mod pod;
 pub mod status;
 pub mod store;

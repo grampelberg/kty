@@ -14,6 +14,7 @@ use prometheus::{histogram_opts, register_histogram, Histogram};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
+    widgets::{Block, Borders},
     Frame,
 };
 use tokio::{
@@ -54,12 +55,7 @@ impl Shell {
         let len = pod.as_ref().containers(None).len();
 
         let mut view = table::Filtered::builder()
-            .table(
-                table::Table::builder()
-                    .items(pod.clone())
-                    .border(false)
-                    .build(),
-            )
+            .table(table::Table::builder().items(pod.clone()).build())
             .constructor(Command::from_pod(client, pod))
             .build();
 
@@ -79,6 +75,7 @@ impl Shell {
                     .pod(pod.clone())
                     .build()
                     .boxed()
+                    .into()
             }))
             .build()
     }
@@ -171,6 +168,16 @@ impl Widget for Command {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let border = Block::default().borders(Borders::ALL);
+
+        let area = {
+            let inner = border.inner(area);
+
+            frame.render_widget(border, area);
+
+            inner
+        };
+
         let [_, area, _] = Layout::vertical([
             Constraint::Fill(0),
             Constraint::Length(3),

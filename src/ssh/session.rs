@@ -435,6 +435,17 @@ impl server::Handler for Session {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, _session))]
+    async fn agent_request(
+        &mut self,
+        _: ChannelId,
+        _session: &mut server::Session,
+    ) -> Result<bool> {
+        tracing::debug!("agent");
+
+        Ok(false)
+    }
+
     #[tracing::instrument(skip(self, _modes, session))]
     async fn pty_request(
         &mut self,

@@ -13,7 +13,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
     style::{palette::tailwind, Style},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use tokio::{
@@ -49,7 +49,6 @@ pub struct Log {
 //   stateful).
 // - Allow for searching within the logs. Feels like it should be ala fzf and
 //   jump to the text + highlight it.
-// - Keep the buffer bounded to a certain size.
 // - Only fetch the most recent X lines, on scroll-back, fetch more.
 // - Convert into something more general, this is fundamentally the same thing
 //   as the yaml widget - but without the syntax highlighting. There should
@@ -90,7 +89,7 @@ impl Log {
         Tab::builder()
             .name(name)
             .constructor(Box::new(move || {
-                Log::new(client.clone(), pod.clone()).boxed()
+                Log::new(client.clone(), pod.clone()).boxed().into()
             }))
             .build()
     }
@@ -153,20 +152,26 @@ impl Widget for Log {
             }
         }
 
+        let block = Block::default().borders(Borders::ALL);
+
+        let inner = block.inner(area);
+
         let result = Viewport::builder()
             .buffer(&self.buffer)
             .view(self.position)
             .build()
-            .draw(frame, area);
+            .draw(frame, inner);
 
         if self.task.is_none() {
             frame.render_widget(
                 Paragraph::new("Log stream ended, come back to restart")
                     .style(Style::default().fg(tailwind::RED.c300))
                     .centered(),
-                area,
+                inner,
             );
         }
+
+        frame.render_widget(block, area);
 
         result
     }

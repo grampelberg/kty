@@ -6,32 +6,98 @@ use ratatui::{
     layout::{Layout, Rect},
     Frame,
 };
+use tachyonfx::Effect;
 
-use super::{propagate, BoxWidget, Widget};
-use crate::events::{Broadcast, Event};
+use super::{propagate, BoxWidget, Placement, Widget};
+use crate::{
+    events::{Broadcast, Event},
+    fx::Animated,
+};
+
+#[derive(Builder)]
+pub struct Element {
+    pub widget: BoxWidget,
+    #[builder(default)]
+    pub terminal: bool,
+
+    // If this is set, the widget will not be used to calculate the zindex of the view. This allows
+    // for things like debug and tunnel to float at the effective level of the view instead of
+    // their own.
+    #[builder(default)]
+    pub ignore: bool,
+    pub zindex: Option<u16>,
+}
+
+impl Element {
+    pub fn animate(self, effect: Effect) -> Element {
+        Self {
+            widget: Animated::builder()
+                .widget(self.widget)
+                .effect(effect)
+                .build()
+                .boxed(),
+            terminal: self.terminal,
+            ignore: self.ignore,
+            zindex: self.zindex,
+        }
+    }
+}
+
+impl Widget for Element {
+    fn _name(&self) -> &'static str {
+        self.widget._name()
+    }
+
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        self.widget.dispatch(event, buffer, area)
+    }
+
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        self.widget.draw(frame, area)
+    }
+
+    fn placement(&self) -> Placement {
+        self.widget.placement()
+    }
+
+    fn zindex(&self) -> u16 {
+        self.zindex.unwrap_or(self.widget.zindex())
+    }
+}
+
+impl From<BoxWidget> for Element {
+    fn from(widget: BoxWidget) -> Self {
+        Self {
+            widget,
+            terminal: false,
+            ignore: false,
+            zindex: None,
+        }
+    }
+}
 
 #[derive(Builder)]
 pub struct View {
     #[builder(default)]
-    widgets: Vec<BoxWidget>,
+    widgets: Vec<Element>,
 
     #[builder(default)]
     show_all: bool,
 }
 
 impl View {
-    pub fn push(&mut self, widget: BoxWidget) {
+    pub fn push(&mut self, widget: Element) {
         self.widgets.push(widget);
     }
 
     pub fn pop(&mut self) -> Option<BoxWidget> {
-        self.widgets.pop()
+        self.widgets.pop().map(|element| element.widget)
     }
 
     fn layers<'a>(
-        widgets: impl Iterator<Item = &'a mut BoxWidget>,
+        widgets: impl Iterator<Item = &'a mut Element>,
         area: Rect,
-    ) -> Vec<Vec<(Rect, &'a mut BoxWidget)>> {
+    ) -> Vec<Vec<(Rect, &'a mut Element)>> {
         let chunks = widgets.chunk_by(|widget| widget.zindex());
 
         chunks
@@ -52,11 +118,12 @@ impl View {
 
 impl Widget for View {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        for (i, widget) in self.widgets.iter_mut().enumerate().rev() {
-            propagate!(widget.dispatch(event, buffer, area), {
-                if i == 0 {
+        for (i, el) in self.widgets.iter_mut().enumerate().rev() {
+            propagate!(el.dispatch(event, buffer, area), {
+                if el.terminal {
                     return Ok(Broadcast::Exited);
                 }
+
                 self.widgets.remove(i);
             });
         }
@@ -82,5 +149,13 @@ impl Widget for View {
         }
 
         Ok(())
+    }
+
+    fn zindex(&self) -> u16 {
+        self.widgets
+            .iter()
+            .filter_map(|w| if w.ignore { None } else { Some(w.zindex()) })
+            .max()
+            .unwrap_or_default()
     }
 }
