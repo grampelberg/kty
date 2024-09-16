@@ -2,6 +2,8 @@ import React from 'react'
 import { DocsThemeConfig, useConfig } from 'nextra-theme-docs'
 import Image from 'next/image'
 import { useTheme } from 'next-themes'
+import { usePathname } from 'next/navigation'
+import path from 'path'
 
 const config: DocsThemeConfig = {
   logo: () => {
@@ -35,11 +37,13 @@ const config: DocsThemeConfig = {
   },
   head: () => {
     const config = useConfig()
+    const pathname = usePathname()
     const title = `${config.title} – kty`
     const description =
       config.frontMatter.description || 'kty: Terminal for Kubernetes'
 
-    const image = config.frontMatter.image || '/logo-dark-500x500.png'
+    const image = config.frontMatter.image || '/logo-dark.gif'
+
     return (
       <>
         <title>{title}</title>
@@ -48,6 +52,9 @@ const config: DocsThemeConfig = {
         <meta property="og:description" content={description} />
         <meta name="og:image" content={image} />
         <meta name="og:image:alt" content={title} />
+        <meta property="og:locale" content="en_us" />
+        <meta property="og:url" content={`https://kty.dev${pathname}`} />
+        <meta property="og:type" content="website" />
 
         <meta name="msapplication-TileColor" content="#fff" />
         <meta httpEquiv="Content-Language" content="en" />
@@ -56,6 +63,7 @@ const config: DocsThemeConfig = {
 
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:site" content="https://kty.dev" />
+        <meta name="twitter:image" content={image} />
         <link
           rel="apple-touch-icon"
           sizes="180x180"
@@ -67,19 +75,7 @@ const config: DocsThemeConfig = {
           sizes="192x192"
           href="/logo-dark-500x500.png"
         />
-        {/* <link
-          rel="icon"
-          type="image/png"
-          sizes="32x32"
-          href="/favicon-32x32.png"
-        /> */}
         <link rel="icon" type="image/png" sizes="96x96" href="/ico-dark.png" />
-        {/* <link
-          rel="icon"
-          type="image/png"
-          sizes="16x16"
-          href="/favicon-16x16.png"
-        /> */}
       </>
     )
   },
