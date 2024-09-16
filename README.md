@@ -9,7 +9,7 @@ cluster, `ssh` gives you a dashboard to interact with the cluster.
 
 You can:
 
-- Use your Github or Google account to log into the cluster. No more annoying
+- Use your GitHub or Google account to log into the cluster. No more annoying
   `kubectl` auth plugins.
 - Get a shell running in pods - just like you would when SSH'n into a host
   normally.
@@ -21,7 +21,7 @@ You can:
   embedded devices.
 
 kty is an SSH server written in rust which provides a TUI-based dashboard that
-maps Kubernetes concepts to SSH. It relies on OpenID providers such as Github or
+maps Kubernetes concepts to SSH. It relies on OpenID providers such as GitHub or
 Google to verify your identity. Kubernetes RBAC validates access, just like
 `kubectl` does, respecting your organizational policies.
 
