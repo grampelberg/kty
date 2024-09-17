@@ -56,11 +56,6 @@ impl Widget for Bar {
         if let Some(Movement::X(x)) = move_cursor(key, area) {
             self.idx = self
                 .idx
-                // TODO: this isn't a great solution, it effectively means that if the middle tab
-                // has an error, you can never get to the last tab. It should be
-                // possible to navigate between things when an error is displayed.
-                // This gets weird though when you think about scrolling the error
-                // dialog.
                 .wrapping_add_signed(x.into())
                 .clamp(0, self.items.len().saturating_sub(1));
 
@@ -131,37 +126,41 @@ impl TabbedView {
             items: tabs,
         }
     }
+
+    fn select(&mut self, idx: usize, buffer: &Buffer) {
+        let start = if self.current < idx {
+            Start::Left
+        } else {
+            Start::Right
+        };
+
+        self.current = idx;
+
+        // TODO: this is *probably* a valid assumption, but it might need to be actually
+        // checked.
+        self.view.pop();
+        self.view.push(
+            Animated::builder()
+                .widget(self.items[idx].widget())
+                .effect(fx::parallel(&[
+                    fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
+                    horizontal_wipe()
+                        .buffer(buffer.clone())
+                        .timer(EffectTimer::from_ms(500, Interpolation::SineInOut))
+                        .start(start)
+                        .call(),
+                ]))
+                .build()
+                .boxed(),
+        );
+    }
 }
 
 impl Widget for TabbedView {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         match self.view.dispatch(event, buffer, area)? {
             Broadcast::Selected(idx) => {
-                let start = if self.current < idx {
-                    Start::Left
-                } else {
-                    Start::Right
-                };
-
-                self.current = idx;
-
-                // TODO: this is *probably* a valid assumption, but it might need to be actually
-                // checked.
-                self.view.pop();
-                self.view.push(
-                    Animated::builder()
-                        .widget(self.items[idx].widget())
-                        .effect(fx::parallel(&[
-                            fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
-                            horizontal_wipe()
-                                .buffer(buffer.clone())
-                                .timer(EffectTimer::from_ms(500, Interpolation::SineInOut))
-                                .start(start)
-                                .call(),
-                        ]))
-                        .build()
-                        .boxed(),
-                );
+                self.select(idx, buffer);
 
                 Ok(Broadcast::Consumed)
             }

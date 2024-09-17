@@ -12,6 +12,8 @@ use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
+    style::{palette::tailwind, Style},
+    widgets::Paragraph,
     Frame,
 };
 use tokio::{
@@ -34,7 +36,7 @@ use crate::{
 };
 
 pub struct Log {
-    task: JoinHandle<Result<()>>,
+    task: Option<JoinHandle<Result<()>>>,
 
     rx: mpsc::UnboundedReceiver<String>,
     buffer: Vec<String>,
@@ -74,7 +76,7 @@ impl Log {
         ));
 
         Self {
-            task,
+            task: Some(task),
             rx,
             buffer: Vec::new(),
 
@@ -134,8 +136,8 @@ impl Widget for Log {
             self.position.y = u16::MAX;
         }
 
-        if self.task.is_finished() {
-            let task = &mut self.task;
+        if self.task.as_ref().map_or(false, JoinHandle::is_finished) {
+            let task = self.task.take().expect("task is finished");
 
             match futures::executor::block_on(async move { task.await? }) {
                 Ok(()) => return Err(eyre!("Log task finished unexpectedly")),
@@ -151,17 +153,30 @@ impl Widget for Log {
             }
         }
 
-        Viewport::builder()
+        let result = Viewport::builder()
             .buffer(&self.buffer)
             .view(self.position)
             .build()
-            .draw(frame, area)
+            .draw(frame, area);
+
+        if self.task.is_none() {
+            frame.render_widget(
+                Paragraph::new("Log stream ended, come back to restart")
+                    .style(Style::default().fg(tailwind::RED.c300))
+                    .centered(),
+                area,
+            );
+        }
+
+        result
     }
 }
 
 impl Drop for Log {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Some(task) = self.task.as_ref() {
+            task.abort();
+        }
     }
 }
 
