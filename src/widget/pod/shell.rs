@@ -94,40 +94,30 @@ impl Widget for Shell {
     }
 }
 
-enum CommandState {
-    Input(input::Text),
-    Attached,
-}
-
 static COMMAND: &str = "/bin/bash";
 
 struct Command {
     client: kube::Client,
     pod: Arc<Pod>,
     container: Container,
-
-    state: CommandState,
+    content: input::Text,
 }
 
 impl Command {
     pub fn new(client: kube::Client, pod: Arc<Pod>, container: Container) -> Self {
         WIDGET_VIEWS.container.cmd.inc();
 
-        let state = CommandState::Input(Command::input(&container));
+        let name = container.name_any();
 
         Self {
             client,
             pod,
             container,
-            state,
+            content: input::Text::builder()
+                .title(name)
+                .content(input::Content::from_string(COMMAND))
+                .build(),
         }
-    }
-
-    fn input(container: &Container) -> input::Text {
-        input::Text::builder()
-            .title(container.name_any())
-            .content(input::Content::from_string(COMMAND))
-            .build()
     }
 
     pub fn from_pod(client: kube::Client, pod: Arc<Pod>) -> table::DetailFn {
@@ -142,15 +132,14 @@ impl Command {
             .boxed())
         })
     }
+}
 
-    fn dispatch_input(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        let CommandState::Input(ref mut txt) = self.state else {
-            return Ok(Broadcast::Ignored);
-        };
+impl Widget for Command {
+    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
+        propagate!(self.content.dispatch(event, buffer, area));
 
-        propagate!(txt.dispatch(event, buffer, area));
-
-        let cmd = txt
+        let cmd = self
+            .content
             .content()
             .borrow()
             .as_ref()
@@ -158,9 +147,7 @@ impl Command {
 
         match event.key() {
             Some(Keypress::Enter) => {
-                self.state = CommandState::Attached;
-
-                Ok(Broadcast::Raw(Box::new(
+                return Ok(Broadcast::Raw(Box::new(
                     ExecBuilder::default()
                         .start(Utc::now())
                         .client(self.client.clone())
@@ -170,16 +157,20 @@ impl Command {
                         .build()?,
                 )))
             }
-            Some(Keypress::Escape) => Ok(Broadcast::Exited),
+            Some(Keypress::Escape) => return Ok(Broadcast::Exited),
+            _ => {}
+        };
+
+        match event {
+            Event::Finished(result) => Ok(result
+                .as_ref()
+                .map(|()| Broadcast::Exited)
+                .map_err(std::clone::Clone::clone)?),
             _ => Ok(Broadcast::Ignored),
         }
     }
 
-    fn draw_input(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let CommandState::Input(ref mut txt) = self.state else {
-            return Ok(());
-        };
-
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let [_, area, _] = Layout::vertical([
             Constraint::Fill(0),
             Constraint::Length(3),
@@ -194,30 +185,7 @@ impl Command {
         ])
         .areas(area);
 
-        txt.draw(frame, area)
-    }
-}
-
-impl Widget for Command {
-    fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        propagate!(self.dispatch_input(event, buffer, area));
-
-        match event {
-            Event::Finished(result) => Ok(result
-                .as_ref()
-                .map(|()| Broadcast::Exited)
-                .map_err(std::clone::Clone::clone)?),
-            _ => Ok(Broadcast::Ignored),
-        }
-    }
-
-    fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        match self.state {
-            CommandState::Input(_) => self.draw_input(frame, area)?,
-            CommandState::Attached => {}
-        }
-
-        Ok(())
+        self.content.draw(frame, area)
     }
 
     fn zindex(&self) -> u16 {
