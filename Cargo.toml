@@ -96,6 +96,9 @@ workspace = true
 debug = 0
 split-debuginfo = "unpacked"
 
+[profile.release]
+lto = true
+
 [workspace.lints.rust]
 missing_docs = "warn"
 keyword-idents = "warn"
