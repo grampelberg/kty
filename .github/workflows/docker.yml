@@ -70,8 +70,10 @@ jobs:
           file: docker/kty.dockerfile
           platforms: ${{ inputs.os }}/${{ inputs.arch }}
 
-          cache-from: type=registry,ref=${{ env.CACHE }}
-          cache-to: type=registry,ref=${{ env.CACHE }},mode=max
+          cache-from: |
+            ${{ inputs.arch == 'arm64' && format('type=registry,ref={0}', env.CACHE) || 'type=gha' }}
+          cache-to: |
+            ${{ inputs.arch == 'arm64' && format('type=registry,ref={0},mode=max', env.CACHE) || 'type=gha' }}
 
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}

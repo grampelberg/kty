@@ -39,7 +39,14 @@
 
 ## TUI
 
+- There needs to be some way to pre-flight permissions for a component so that
+  an error is shown instead of letting the component fail.
+
 - Is it possible to get the kubelet logs?
+
+  - `kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/` works as
+    `NodeQueryLog` which is beta in 1.30. It is a little weird though, k3s at
+    least returns html? And it doesn't contain the kubelet logs?
 
 - Use SSH forwarding to get into the nodes.
 
