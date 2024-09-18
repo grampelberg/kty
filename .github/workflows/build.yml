@@ -81,7 +81,7 @@ jobs:
     with:
       os: linux
       arch: arm64
-      runner: buildjet-4vcpu-ubuntu-2204-arm
+      runner: buildjet-16vcpu-ubuntu-2204-arm
     secrets:
       POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
 

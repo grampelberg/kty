@@ -97,7 +97,7 @@ debug = 0
 split-debuginfo = "unpacked"
 
 [profile.release]
-lto = true
+lto = "thin"
 
 [workspace.lints.rust]
 missing_docs = "warn"
