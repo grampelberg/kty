@@ -1,0 +1,225 @@
+---
+title: 'Stop Making Kubernetes Auth Hard'
+date: 2024-09-19
+byline: Thomas Rampelberg
+---
+
+I've spent most of my time working with Kubernetes being afraid of auth. I
+understood how RBAC works and I knew that `.kube/config` is what's required to
+talk to an API server, but that's pretty much where my understanding stopped.
+Configuring the API server to use an auth plugin, getting tokens or certificates
+and setting up plugins made me think that it was all a monumental task. Just
+getting the environment setup correctly for myself _was_ a monumental task.
+Well, as part of implementing kty's oauth support, I've been forced to figure
+out how it all actually works. And, as turns out, it doesn't need to be nearly
+as complex as I thought it was.
+
+## TL;DR
+
+Use OpenID and grant groups or users the correct permissions in your cluster.
+Your organization already has an OpenID provider in place. Google, GitHub, Okta
+(and many more) can all be used. That's it, that's all you need. Don't bother
+with IAM, service accounts or any of that other stuff. Those are all reasonable
+for machines - not for users.
+
+Take it from the folks over at Robinhood. Karen Tu and Sujith Katakam took their
+existing complexity and simplified it down to OpenID. The result was a system
+that is easier to maintain and keep secure. They've got a [Kubecon
+talk][robinhood-talk] that walks you through their journey and is well worth
+watching.
+
+If you'd like to know how to do this yourself, jump down to
+[the instructions](#how-do-i-do-this-myself). However, I'd recommend reading
+through the rest of this post and demystifying what's going on behind the
+scenes. It is a good way to contextualize how all the pieces fit together.
+
+[robinhood-talk]: https://youtu.be/aBUGtu-venk?si=KvF3H8PANOxeFwzl
+
+## Authentication
+
+Let's start out by splitting "auth" into two parts: [authentication][authn] and
+[authorization][authz]. Authentication is how you prove who you are. The result
+of the authentication process is an identity that can be used to see what you
+are, or aren't authorized to do. If we didn't actually care about verifying your
+identity, authentication could be nothing more than sending the username in
+cleartext to the API server. Obviously, we'd like a solution that is a little
+bit more secure than that.
+
+[authn]: https://en.wikipedia.org/wiki/Authentication
+[authz]: https://en.wikipedia.org/wiki/Authorization
+
+Kubernetes has a [whole bunch][auth-plugins] of ways to authenticate. Because it
+is the easiest to understand, let's start with the static token file. This is
+equivalent to having a password. You put the token (aka "password") into the
+file and then associate it with a username. If this sounds like `/etc/passwd`,
+that's because it is! Each request sent to the API server contains your token as
+a header. The API server looks up the token in its file and maps that to a user
+or set of groups. Very similar to sending the username to the API server, but
+now we've got a piece of shared data, the token, that verifies the identity.
+
+Open ID Connect (OIDC) gets rid of the pre-shared secret and instead uses some
+[cryptography magic][pki] to do the same thing. This allows for identity to be
+created in a central location (a provider) and subsequently verified by anyone.
+When you authenticate with an OIDC provider, the end result of the process is an
+[ID token][oidc-id-token].
+
+[pki]: https://en.wikipedia.org/wiki/Public-key_cryptography
+
+The ID token is a [JSON web token][jwt] (JWT) that contains a bunch of
+information about your identity. The information in this token is effectively
+key/value pairs that are called "claims". Each claim is a piece of data that the
+provider has verified.
+
+The token is signed using the private key of the provider and can be verified by
+anyone with the public key. Most importantly, OIDC providers publish their
+configuration so that anyone can verify the token. If you're interested in
+what's in that configuration, check it out for the [default
+provider][oidc-config] in kty.
+
+[jwt]: https://jwt.io/introduction
+
+With an ID token and the way to verify it in hand, the API server can extract an
+identity from the token and use that as part of RBAC to understand what you're
+allowed to do. The association between the token and either groups or users
+happens as part of a claim. If you've got a JWT, you can see the claims in your
+token by going to [jwt.io](https://jwt.io) and pasting it in. Here's a token
+that I've gotten for kty:
+
+```JSON
+{
+  "iss": "https://kty.us.auth0.com/",
+  "aud": "P3g7SKU42Wi4Z86FnNDqfiRtQRYgWsqx",
+  "iat": 1726784050,
+  "exp": 1726820050,
+  "sub": "github|123456",
+  "email": "me@my-domain.com"
+}
+```
+
+For this token, we could configure the API server to map the `email` claim to a
+user. This is just like the token file from above! Instead of using the
+pre-shared secret as the mapping, we've used the public key from the OIDC
+provider.
+
+[auth-plugins]:
+  https://kubernetes.io/docs/reference/access-authn-authz/authentication/
+[oidc-id-token]: https://auth0.com/docs/secure/tokens/id-tokens
+[oidc-config]: https://kty.us.auth0.com/.well-known/openid-configuration
+[rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+
+## Authorization
+
+Here's where it gets interesting. Now that we have a verified identity,
+authorization can take place. We'll check a list of rules (or roles) and test
+whether the identity can do the action requested. Kubernetes' [role based access
+control system][rbac] doesn't care about how you authenticated. If the API says
+you're a user - then you are that user. All it cares about is your identity and
+what roles that identity is bound to. Let's look at a simple role:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: view
+rules:
+  - apiGroups:
+      - ''
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+```
+
+Any identity that is bound to this role can get, list or watch pods in any
+namespace. How does an identity get associated with this role? That's where the
+`ClusterRoleBinding` comes into play.
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: me@my-domain.com
+```
+
+Assuming that we're still talking about the token from above, this role binding
+associates all the permissions in the `view` role with the user
+`me@my-domain.com`. That's it! We've authenticated the identity and then
+verified that it can do some actions on the cluster. As RBAC is opt-in, you
+start off with no permissions and need to be granted them to do anything. There
+are some policies that come by default. In fact the `view` cluster role is one
+that comes out of the box (but simplified in this example). To see what can be
+granted, make sure to check out the [documentation][rbac].
+
+For extra credit, you can also bind roles to groups. We can configure a claim
+from the JWT to be a group in addition to the email address. Imagine granting
+permissions on a cluster based on which teams a user is a part of. In fact, you
+can map almost anything from someone's GitHub profile directly over to a group.
+This way, you can setup permissions once and manage membership entirely through
+your OIDC provider. When using groups, the role binding ends up looking a little
+different:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: my-team
+```
+
+[rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+
+## How do I do this myself?
+
+We've implemented OIDC support directly into kty. This means that you can `ssh`
+into your cluster without managing any SSH keys. You're presented with a login
+screen that goes through OIDC to verify your identity. That identity uses the
+`email` claim by default to map an external identity onto a `kind: User` defined
+in your role bindings. Check out the [getting started guide](/getting-started)
+and see how simple OIDC can make accessing your cluster.
+
+To get OIDC working directly with `kubectl`, you'll want to check out
+[kubelogin](https://github.com/int128/kubelogin?tab=readme-ov-file), it is a
+plugin that will do the OIDC dance for you. Add the plugin and your cluster's
+connection information to `~/.kube/config` and you're good to go. Note that if
+you can't make the modifications required for the API server, you'll want to use
+an [oidc-proxy](https://github.com/TremoloSecurity/kube-oidc-proxy). Luckily,
+most Kubernetes solutions (like [EKS][eks-oidc] or [GKE][gke-oidc]) support OIDC
+out of the box.
+
+[eks-oidc]:
+  https://docs.aws.amazon.com/eks/latest/userguide/authenticate-oidc-identity-provider.html
+[gke-oidc]: https://cloud.google.com/kubernetes-engine/docs/how-to/oidc
+
+## Bringing it Together
+
+So, what does this all mean? Well, it means that we've now got a central
+location to manage access to our cluster. If you're using groups, membership
+when the token is granted is mapped to a role binding that grants exactly what
+someone needs to work with your cluster. The IDs can be user friendly, so you
+can read through the `RoleBinding` YAML to understand what's allowed or not. If
+you're using `kty`, you don't even need any plugins or configuration! Your users
+can use `ssh` and immediately get access to the cluster.
+
+Please don't be afraid of auth! Don't continue to use incredibly complex systems
+consisting of multiple plugins, webhooks, tokens and certificates. They're all
+hard to setup and/or easy to break. After all, security everyone can follow is
+the best security. Say no to services that require blanket permissions like the
+Kubernetes dashboard. Use OIDC and make sure that users have exactly the
+permissions they need.

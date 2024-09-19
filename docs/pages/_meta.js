@@ -4,6 +4,17 @@ export default {
       breadcrumb: false,
     },
   },
+  blog: {
+    type: 'page',
+    title: 'Blog',
+    theme: {
+      layout: 'raw',
+      typesetting: 'article',
+      timestamp: false,
+      breadcrumb: true,
+      pagination: false,
+    },
+  },
   index: {
     title: 'Overview',
     display: 'hidden',
