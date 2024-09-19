@@ -1,19 +1,12 @@
 # TODO
 
 - Panic handling needs some help. The server doesn't shut down, which is good -
-  but it also doesn't disconnect, or tell the user anything - which is bad.
-  There's also zero info output on panic using the dev dashboard.
+  but it doesn't tell the user anything - which is bad. There's also zero info
+  output on panic using the dev dashboard.
 
 - Implement multi-cluster.
 
 ## Documentation
-
-- Getting started needs help, in particular:
-  - Granting your user should probably go before the install instructions.
-  - Say something about the error when you don't have authorization.
-- Make the getting started on a real cluster instructions more clear. In
-  particular, it seems like it is a little difficult to see the install commands
-  and realize that's what you need to use.
 
 ## Authorization
 
@@ -53,6 +46,9 @@
   - Does it make sense to do the `nsenter` trick for some use cases? This
     requires privileged mode to work.
 
+  - This is waiting on the next release of russh as `handle.open_channel_agent`
+    just landed.
+
 - There's some kind of lag happening when scrolling aggressively (aka, holding
   down a cursor). It goes fine for ~10 items and then has a hitch in the
   rendering.
@@ -77,16 +73,13 @@
 - Dashboard as a struct doesn't really make sense anymore, it should likely be
   converted over to a simple function.
 
-- The initial coalesce in `Apex` is a little weird because of the initial
-  loading screen - feels like it is jumping a couple frames.
-
 - Move YAML over to viewport. Should viewport be doing syntax highlighting by
   default? How do we do a viewport over a set of lines that require history to
   do highlighting?
 
 - There's a bug somewhere in `log_stream`. My k3d cluster restarted and while I
   could get all the logs, the stream wouldn't keep running - it'd terminate
-  immediately. `stern` seemed to be working fine. Recreating the cluster caused
+  immediately. `stern` seemed to be working fine. Recreating the cluster causedx
   everything to work again.
 
 - Move over to something like
