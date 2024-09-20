@@ -4,18 +4,24 @@ pub mod file;
 pub mod install;
 pub mod node;
 pub mod pod;
+pub mod refs;
 pub mod status;
 pub mod store;
 pub mod tunnel;
 
 use color_eyre::Section;
-use eyre::{eyre, Result};
+use eyre::{eyre, Report, Result};
 pub use file::File;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use json_value_merge::Merge;
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+use k8s_openapi::{
+    api::core::v1::ObjectReference,
+    apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition,
+    apimachinery::pkg::apis::meta::v1::OwnerReference,
+};
 use kube::{
+    api,
     api::{
         Api, DynamicObject, GroupVersionKind, ObjectMeta, PartialObjectMetaExt, PatchParams,
         PostParams, ResourceExt,
@@ -24,6 +30,7 @@ use kube::{
     discovery::pinned_kind,
     CustomResourceExt, Resource,
 };
+use petgraph::Graph;
 use regex::Regex;
 use serde::Serialize;
 pub use tunnel::Tunnel;
@@ -131,6 +138,22 @@ pub trait Compare {
     fn cmp(&self, right: &Self) -> std::cmp::Ordering;
 }
 
+pub trait GetGv {
+    fn gv(&self) -> (String, String);
+}
+
+impl GetGv for String {
+    fn gv(&self) -> (String, String) {
+        let version: Vec<_> = self.splitn(2, '/').collect();
+
+        if version.len() == 1 {
+            (String::new(), version[0].to_string())
+        } else {
+            (version[0].to_string(), version[1].to_string())
+        }
+    }
+}
+
 pub trait GetGvk {
     fn gvk(&self) -> Result<GroupVersionKind>;
 }
@@ -141,13 +164,7 @@ impl GetGvk for DynamicObject {
             return Err(eyre!("no types found"));
         };
 
-        let version: Vec<_> = types.api_version.splitn(2, '/').collect();
-
-        let (group, version) = if version.len() == 1 {
-            (String::new(), version[0].to_string())
-        } else {
-            (version[0].to_string(), version[1].to_string())
-        };
+        let (group, version) = types.api_version.gv();
 
         Ok(GroupVersionKind {
             group,
@@ -157,22 +174,115 @@ impl GetGvk for DynamicObject {
     }
 }
 
+impl GetGvk for OwnerReference {
+    fn gvk(&self) -> Result<GroupVersionKind> {
+        let (group, version) = self.api_version.gv();
+
+        Ok(GroupVersionKind {
+            group,
+            version,
+            kind: self.kind.clone(),
+        })
+    }
+}
+
+pub trait ApiResource {
+    fn api_resource(&self) -> api::ApiResource;
+}
+
+impl ApiResource for DynamicObject {
+    fn api_resource(&self) -> api::ApiResource {
+        api::ApiResource::from_gvk(&self.gvk().unwrap())
+    }
+}
+
+async fn dynamic_client(
+    client: kube::Client,
+    namespace: &str,
+    gvk: &GroupVersionKind,
+) -> Result<Api<DynamicObject>> {
+    let (ar, caps) = pinned_kind(&client, gvk).await?;
+
+    if matches!(caps.scope, Scope::Namespaced) {
+        Ok(Api::namespaced_with(client, namespace, &ar))
+    } else {
+        Ok(Api::all_with(client, &ar))
+    }
+}
+
 pub trait DynamicClient {
     async fn dynamic(&self, client: kube::Client) -> Result<Api<DynamicObject>>;
 }
 
 impl DynamicClient for DynamicObject {
     async fn dynamic(&self, client: kube::Client) -> Result<Api<DynamicObject>> {
-        let (ar, caps) = pinned_kind(&client, &self.gvk()?).await?;
+        dynamic_client(
+            client,
+            self.namespace().unwrap_or_default().as_str(),
+            &self.gvk()?,
+        )
+        .await
+    }
+}
 
-        if matches!(caps.scope, Scope::Namespaced) {
-            Ok(Api::namespaced_with(
-                client,
-                self.namespace().unwrap_or_default().as_str(),
-                &ar,
-            ))
-        } else {
-            Ok(Api::all_with(client, &ar))
+#[async_trait::async_trait]
+pub(crate) trait GetOwners {
+    fn get_owners(&self, client: kube::Client) -> impl Stream<Item = Result<DynamicObject>>;
+}
+
+#[async_trait::async_trait]
+impl GetOwners for ObjectMeta {
+    fn get_owners(&self, client: kube::Client) -> impl Stream<Item = Result<DynamicObject>> {
+        futures::stream::iter(self.owner_references.clone().unwrap_or_default())
+            .map(move |reference| {
+                let client = client.clone();
+                let namespace = self.namespace.clone().unwrap_or_default();
+
+                async move {
+                    let resource = dynamic_client(client, namespace.as_str(), &reference.gvk()?)
+                        .await?
+                        .get(reference.name.as_str())
+                        .await?;
+
+                    Ok::<DynamicObject, Report>(resource)
+                }
+            })
+            .buffered(100)
+    }
+}
+
+pub(crate) trait NamedReference {
+    fn named_ref<N, NS>(name: N, namespace: Option<NS>) -> ObjectReference
+    where
+        N: Into<String>,
+        NS: Into<String>;
+}
+
+impl<K> NamedReference for K
+where
+    K: Resource,
+    <K as Resource>::DynamicType: Default,
+{
+    fn named_ref<N, NS>(name: N, namespace: Option<NS>) -> ObjectReference
+    where
+        N: Into<String>,
+        NS: Into<String>,
+    {
+        let namespace = namespace.map(Into::into);
+
+        ObjectReference {
+            api_version: Some(K::api_version(&K::DynamicType::default()).to_string()),
+            field_path: None,
+            kind: Some(K::kind(&K::DynamicType::default()).to_string()),
+            name: Some(name.into()),
+            namespace,
+            resource_version: None,
+            uid: None,
         }
     }
+}
+
+#[async_trait::async_trait]
+pub(crate) trait ResourceGraph {
+    async fn graph(&self, client: &kube::Client) -> Result<Graph<ObjectReference, ()>>;
 }

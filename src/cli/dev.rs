@@ -1,6 +1,7 @@
 mod agent;
 mod authz;
 mod dashboard;
+mod graph;
 mod shell;
 mod stdin;
 
@@ -19,6 +20,7 @@ enum DevCmd {
     Agent(agent::Agent),
     Authz(authz::Authz),
     Dashboard(dashboard::Dashboard),
+    Graph(graph::Cmd),
     Shell(shell::Shell),
     Stdin(stdin::Stdin),
 }
