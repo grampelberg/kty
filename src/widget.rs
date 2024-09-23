@@ -1,6 +1,7 @@
 pub mod apex;
 pub mod debug;
 pub mod error;
+pub mod graph;
 pub mod input;
 pub mod loading;
 pub mod log;

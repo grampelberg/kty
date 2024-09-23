@@ -98,11 +98,14 @@ impl View {
         widgets: impl Iterator<Item = &'a mut Element>,
         area: Rect,
     ) -> Vec<Vec<(Rect, &'a mut Element)>> {
-        let chunks = widgets.chunk_by(|widget| widget.zindex());
+        // chunk_by only works with *consecutive* elements, so we need to first sort the
+        // widgets.
+        let chunks = widgets
+            .sorted_by(|a, b| a.zindex().cmp(&b.zindex()))
+            .chunk_by(|widget| widget.zindex());
 
         chunks
             .into_iter()
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
             .map(|(_, layer)| {
                 let layer: Vec<_> = layer.collect();
 
