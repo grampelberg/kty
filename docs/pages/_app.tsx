@@ -9,7 +9,8 @@ import { PostHogProvider } from 'posthog-js/react'
 
 if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG) {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG, {
-    api_host: 'https://us.i.posthog.com',
+    api_host: 'https://kty.dev/ingest',
+    ui_host: 'https://us.posthog.com',
     loaded: (posthog) => {
       if (process.env.NODE_ENV === 'development') posthog.debug()
     },
