@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/public/logo-dark-github.gif">
-  <img alt="logo" src="./docs/public/logo-light-github.gif">
+  <source media="(prefers-color-scheme: dark)" srcset="https://kty.dev/static/logo-dark-github.gif">
+  <img alt="logo" src="https://kty.dev/static/logo-light-github.gif">
 </picture>
 
 The terminal for Kubernetes. kty is the easiest way to access resources such as
