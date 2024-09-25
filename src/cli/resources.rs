@@ -10,7 +10,11 @@ use serde::Serialize;
 use super::namespace;
 use crate::resources::{install, DynamicClient, GetGvk, MANAGER};
 
-const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+lazy_static::lazy_static! {
+   static ref VERSION: &'static str = option_env!("CARGO_PKG_VERSION")
+    .map(|v| if v.contains("0.0.0-UNSTABLE") { "latest" } else { v })
+    .unwrap_or("latest");
+}
 
 #[derive(Parser, Container)]
 pub struct Resources {
@@ -91,7 +95,7 @@ pub struct Install {
     #[arg(from_global)]
     namespace: Option<String>,
 
-    #[arg(long, default_value_t = format!("ghcr.io/grampelberg/kty:{}", VERSION.unwrap_or("latest")))]
+    #[arg(long, default_value_t = format!("ghcr.io/grampelberg/kty:{}", VERSION.to_string()))]
     image: String,
 }
 

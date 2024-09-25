@@ -79,7 +79,10 @@ extract-from-digests:
     rm /tmp/bins/kty
 
 set-version:
-    git grep -l "{{ version_placeholder }}" | grep -v "justfile" | xargs -I {} sed -i'.tmp' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
+    git grep -l "{{ version_placeholder }}" | \
+        grep -v "justfile" | \
+        grep -v ".rs" | \
+        xargs -I {} sed -i'.tmp' -e 's/{{ version_placeholder }}/{{ version }}/g' {}
 
 helm-build:
     helm package helm --dependency-update --destination /tmp/chart
