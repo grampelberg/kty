@@ -72,6 +72,7 @@ impl Log {
                 previous: true,
                 ..Default::default()
             },
+            true,
         ));
 
         Self {
@@ -191,15 +192,16 @@ fn log_stream<'a>(
     pod: Arc<Pod>,
     tx: UnboundedSender<String>,
     params: LogParams,
+    retry: bool,
 ) -> BoxFuture<'a, Result<()>> {
     async move {
-        let client = Api::<Pod>::namespaced(client.clone(), &pod.namespace().unwrap());
+        let pod_client = Api::<Pod>::namespaced(client.clone(), &pod.namespace().unwrap());
 
         let containers = try_join_all(pod.containers(None).iter().map(|c| {
             let mut params = params.clone();
             params.container = Some(c.name_any());
 
-            container_stream(&client, c, params)
+            container_stream(&pod_client, c, params)
         }))
         .await?;
 
@@ -210,6 +212,21 @@ fn log_stream<'a>(
         }
 
         tracing::debug!(pod = pod.name_any(), "stream ended");
+
+        // The api server is a little finicky about streaming previous logs. It is
+        // possible that the request succeeds, but also that the stream finishes
+        // immediately. If this happens, retry without the previous flag. Because we're
+        // not clearing out the buffer on the widget side of things, the logs will be
+        // duplicated. Before the restart, we send a simple message to tell the user
+        // what happened.
+        if retry {
+            tx.send("Stream terminated, retrying without previous logs".to_string())?;
+
+            let mut new_params = params.clone();
+            new_params.previous = false;
+
+            return log_stream(client, pod, tx, new_params, false).await;
+        }
 
         Ok(())
     }
