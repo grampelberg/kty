@@ -7,6 +7,7 @@ use kube::{api::ListParams, Api};
 use petgraph::graph::Graph;
 use ratatui::{
     layout::Constraint,
+    style::{palette::tailwind, Style},
     text::Text,
     widgets::{block::Title, Borders, Paragraph},
     Frame,
@@ -45,6 +46,7 @@ impl Command for Cmd {
         let mut stdin = tokio::io::stdin();
         let mut buf = Vec::new();
         let mut i: usize = 0;
+        let mut state = graph::State::default();
 
         loop {
             tokio::select! {
@@ -62,13 +64,15 @@ impl Command for Cmd {
                         Keypress::Escape => break,
                         Keypress::CursorLeft => i = i.saturating_sub(1),
                         Keypress::CursorRight => i = i.saturating_add(1),
-                        _ => {}
+                        Keypress::CursorDown => state.next(),
+                        Keypress::CursorUp => state.prev(),
+                        _ => {},
                     }
                 }
                 _ = interval.tick() => {
                     let g = &graphs.get(i % graphs.len()).unwrap();
 
-                    term.draw(|frame| draw(frame, i, g))?;
+                    term.draw(|frame| draw(frame, i, g, &mut state))?;
                 }
             }
         }
@@ -77,7 +81,7 @@ impl Command for Cmd {
     }
 }
 
-fn draw(frame: &mut Frame, i: usize, graph: &Graph<ObjectReference, ()>) {
+fn draw(frame: &mut Frame, i: usize, graph: &Graph<ObjectReference, ()>, state: &mut graph::State) {
     frame.render_widget(Paragraph::new(format!("{i}")), frame.area());
 
     let ng = graph.map(
@@ -95,6 +99,7 @@ fn draw(frame: &mut Frame, i: usize, graph: &Graph<ObjectReference, ()>) {
                 } else {
                     None
                 })
+                .selected_style(Style::default().fg(tailwind::INDIGO.c300))
                 .build()
         },
         |_, ()| 0,
@@ -102,7 +107,7 @@ fn draw(frame: &mut Frame, i: usize, graph: &Graph<ObjectReference, ()>) {
 
     let widget = graph::Directed::builder().graph(ng).build();
 
-    frame.render_stateful_widget_ref(widget, frame.area(), &mut graph::State::default());
+    frame.render_stateful_widget_ref(widget, frame.area(), state);
 }
 
 impl Drop for Cmd {

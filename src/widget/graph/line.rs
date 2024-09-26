@@ -44,18 +44,20 @@ impl Line {
 
             let mut symbol = match pos {
                 itertools::Position::First => {
-                    if current_symbol == symbols::line::HORIZONTAL {
+                    if matches!(direction, RenderDirection::LeftToRight) {
+                        if current_symbol == symbols::line::HORIZONTAL {
+                            symbols::line::HORIZONTAL_UP
+                        } else {
+                            symbols::line::BOTTOM_LEFT
+                        }
+                    } else if current_symbol == symbols::line::HORIZONTAL {
                         symbols::line::HORIZONTAL_DOWN
-                    } else if matches!(direction, RenderDirection::LeftToRight) {
-                        symbols::line::BOTTOM_LEFT
                     } else {
                         symbols::line::TOP_LEFT
                     }
                 }
                 itertools::Position::Last => {
-                    if current_symbol == symbols::line::HORIZONTAL {
-                        symbols::line::HORIZONTAL_UP
-                    } else if matches!(direction, RenderDirection::LeftToRight) {
+                    if matches!(direction, RenderDirection::LeftToRight) {
                         symbols::line::TOP_RIGHT
                     } else {
                         symbols::line::BOTTOM_RIGHT
@@ -74,6 +76,9 @@ impl Line {
             symbol = match current_symbol {
                 symbols::line::BOTTOM_RIGHT => symbols::line::HORIZONTAL_UP,
                 symbols::line::TOP_RIGHT => symbols::line::HORIZONTAL_DOWN,
+                symbols::line::TOP_LEFT | symbols::line::BOTTOM_LEFT => {
+                    symbols::line::DOUBLE_VERTICAL
+                }
                 symbols::line::HORIZONTAL_DOWN => {
                     if cell_symbol(buffer, (buf_pos.0, buf_pos.1 - 1).into()) == " " {
                         continue;

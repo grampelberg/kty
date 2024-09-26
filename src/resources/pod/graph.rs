@@ -1,7 +1,7 @@
 use eyre::{eyre, Result};
 use k8s_openapi::api::{
     core::v1::{
-        ConfigMap, Namespace, ObjectReference, PersistentVolume, PersistentVolumeClaim,
+        ConfigMap, Namespace, Node, ObjectReference, PersistentVolume, PersistentVolumeClaim,
         PersistentVolumeClaimSpec, Pod, PodSpec, Secret, Service, ServiceAccount, Volume,
     },
     discovery::v1::EndpointSlice,
@@ -180,6 +180,14 @@ impl ResourceGraph for Pod {
         let ns = self.namespace().ok_or_else(|| eyre!("no namespace"))?;
 
         refs.from(Namespace::named_ref(ns.as_str(), None::<String>));
+
+        if let Some(PodSpec {
+            node_name: Some(node),
+            ..
+        }) = &self.spec
+        {
+            refs.from(Node::named_ref(node.as_str(), None::<String>));
+        }
 
         auth(self, client, &mut refs).await?;
         network(self, client, &mut refs).await?;

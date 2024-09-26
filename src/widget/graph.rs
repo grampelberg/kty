@@ -11,7 +11,7 @@ use petgraph::graph::{Graph, NodeIndex};
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
-    widgets::{StatefulWidgetRef, Widget, WidgetRef},
+    widgets::{StatefulWidgetRef, WidgetRef},
 };
 
 static PADDING: Rect = Rect {
@@ -39,10 +39,35 @@ struct Edge {
     to: Position,
 }
 
-#[allow(dead_code)]
 #[derive(Default)]
 pub struct State {
     selected: Option<NodeIndex>,
+}
+
+impl State {
+    pub fn select(&mut self, idx: NodeIndex) {
+        self.selected = Some(idx);
+    }
+
+    pub fn select_signed(&mut self, idx: isize) {
+        let selected = self
+            .selected
+            .map_or(0, |n| n.index().saturating_add_signed(idx));
+
+        self.selected = Some(NodeIndex::new(selected));
+    }
+
+    pub fn selected(&self) -> Option<NodeIndex> {
+        self.selected
+    }
+
+    pub fn next(&mut self) {
+        self.select_signed(1);
+    }
+
+    pub fn prev(&mut self) {
+        self.select_signed(-1);
+    }
 }
 
 pub struct Directed<'a> {
@@ -63,7 +88,7 @@ impl<'a> Directed<'a> {
 }
 
 impl Directed<'_> {
-    fn node(&self, area: Rect, buffer: &mut Buffer, _: &mut State, node: &Placement) {
+    fn node(&self, area: Rect, buffer: &mut Buffer, state: &mut State, node: &Placement) {
         let widget = &self.graph.raw_nodes()[node.idx.index()].weight;
 
         let mut subview = node.pos;
@@ -74,7 +99,9 @@ impl Directed<'_> {
             return;
         }
 
-        widget.render(subview, buffer);
+        let mut selected = state.selected() == Some(node.idx);
+
+        widget.render_ref(subview, buffer, &mut selected);
     }
 }
 
@@ -82,6 +109,13 @@ impl StatefulWidgetRef for Directed<'_> {
     type State = State;
 
     fn render_ref(&self, area: Rect, buffer: &mut Buffer, state: &mut Self::State) {
+        if let Some(selected) = state.selected() {
+            let max = self.graph.node_count();
+            if selected.index() >= max {
+                state.select(NodeIndex::new(max - 1));
+            }
+        }
+
         self.nodes.iter().for_each(|(_, node)| {
             self.node(area, buffer, state, node);
         });
