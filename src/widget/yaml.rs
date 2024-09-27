@@ -5,6 +5,7 @@ use std::{
 
 use eyre::Result;
 use kube::Resource;
+use ouroboros::self_referencing;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -64,11 +65,17 @@ fn to_lines(txt: &str) -> Vec<Text> {
         .collect()
 }
 
-// TODO:
-// - Need to cache the lines.
-// - See logs for performance improvements (eg. only render visible lines).
+#[self_referencing]
+struct Formatted {
+    raw: String,
+    #[borrows(raw)]
+    #[covariant]
+    lines: Vec<Text<'this>>,
+}
+
 pub struct Yaml {
-    txt: String,
+    buffer: Formatted,
+
     position: BigPosition,
 }
 
@@ -81,10 +88,14 @@ impl Yaml {
             .with_label_values(&[K::kind(&()).borrow(), "yaml"])
             .inc();
 
-        let txt = resource.to_yaml().unwrap();
+        let buffer = FormattedBuilder {
+            raw: resource.to_yaml().expect("has yaml"),
+            lines_builder: |raw| to_lines(raw),
+        }
+        .build();
 
         Self {
-            txt,
+            buffer,
             position: BigPosition::default(),
         }
     }
@@ -118,7 +129,7 @@ impl Widget for Yaml {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let block = Block::default().borders(Borders::ALL);
         let inner = block.inner(area);
-        let txt = to_lines(self.txt.as_str());
+        let txt = self.buffer.borrow_lines();
 
         self.position.y = self.position.y.clamp(
             0,
@@ -128,7 +139,7 @@ impl Widget for Yaml {
         let pos = self.position;
 
         let result = Viewport::builder()
-            .buffer(&txt)
+            .buffer(txt)
             .view(pos)
             .build()
             .draw(frame, inner);
