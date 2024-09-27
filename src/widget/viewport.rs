@@ -3,7 +3,7 @@ use eyre::Result;
 use ratatui::{
     layout::{Margin, Offset, Rect},
     text::Text,
-    widgets::{Scrollbar, ScrollbarState},
+    widgets::{Clear, Scrollbar, ScrollbarState},
     Frame,
 };
 
@@ -51,7 +51,12 @@ impl Viewport<'_> {
         let scrollbar = Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
             .track_symbol(Some("|"));
 
-        let mut state = ScrollbarState::new(self.buffer.len()).position(self.view.y as usize);
+        let mut state = ScrollbarState::new(
+            self.buffer
+                .len()
+                .saturating_sub(usize::from(area.height + 1)),
+        )
+        .position(self.view.y as usize);
 
         frame.render_stateful_widget(scrollbar, area, &mut state);
     }
@@ -59,6 +64,8 @@ impl Viewport<'_> {
 
 impl<'a> Widget for Viewport<'a> {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        frame.render_widget(Clear, area);
+
         self.content(frame, area);
         self.scroll(frame, area);
 

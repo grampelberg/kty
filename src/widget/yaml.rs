@@ -8,8 +8,8 @@ use kube::Resource;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    text::Line,
-    widgets::{Block, Borders, Paragraph},
+    text::{Line, Text},
+    widgets::{Block, Borders},
     Frame,
 };
 use serde::Serialize;
@@ -23,6 +23,7 @@ use syntect_tui::into_span;
 
 use super::{
     nav::{move_cursor, BigPosition, Movement, Shrink},
+    viewport::Viewport,
     Widget, WIDGET_VIEWS_VEC,
 };
 use crate::{
@@ -44,7 +45,7 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
     theme
 });
 
-fn to_lines(txt: &str) -> Vec<Line> {
+fn to_lines(txt: &str) -> Vec<Text> {
     let ps = SyntaxSet::load_defaults_newlines();
     let syntax = ps.find_syntax_by_extension("yaml").unwrap();
 
@@ -57,8 +58,9 @@ fn to_lines(txt: &str) -> Vec<Line> {
                 .unwrap()
                 .into_iter()
                 .filter_map(|segment| into_span(segment).ok())
-                .collect()
+                .collect::<Line>()
         })
+        .map(Text::from)
         .collect()
 }
 
@@ -113,23 +115,26 @@ impl Widget for Yaml {
         Ok(Broadcast::Ignored)
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let lines = to_lines(self.txt.as_str());
+        let block = Block::default().borders(Borders::ALL);
+        let inner = block.inner(area);
+        let txt = to_lines(self.txt.as_str());
 
-        self.position.y = self
-            .position
-            .y
-            .clamp(0, lines.len().saturating_sub(area.height.into()) as u32);
-
-        // TODO: move to a viewport so that the scroll is not truncated.
-        frame.render_widget(
-            Paragraph::new(lines)
-                .scroll(self.position.shrink())
-                .block(Block::default().borders(Borders::ALL)),
-            area,
+        self.position.y = self.position.y.clamp(
+            0,
+            txt.len().saturating_sub(usize::from(area.height)).shrink(),
         );
 
-        Ok(())
+        let pos = self.position;
+
+        let result = Viewport::builder()
+            .buffer(&txt)
+            .view(pos)
+            .build()
+            .draw(frame, inner);
+
+        frame.render_widget(block, area);
+
+        result
     }
 }
