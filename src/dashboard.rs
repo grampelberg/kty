@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicU16, Ordering},
+    time::Duration,
+};
 
 use bon::Builder;
 use eyre::{eyre, Report, Result};
@@ -39,8 +42,11 @@ lazy_static! {
     .unwrap();
 }
 
-static FPS: u16 = 10;
-pub static RENDER_INTERVAL: Duration = Duration::from_millis(1000 / FPS as u64);
+pub static FPS: AtomicU16 = AtomicU16::new(10);
+
+pub fn render_interval() -> Duration {
+    Duration::from_millis(1000 / u64::from(FPS.load(Ordering::Relaxed)))
+}
 
 #[derive(Builder)]
 pub struct Dashboard {
@@ -137,7 +143,7 @@ async fn run(
 
     stdout: impl Writer,
 ) -> Result<()> {
-    let mut interval = tokio::time::interval(RENDER_INTERVAL);
+    let mut interval = tokio::time::interval(render_interval());
     // Because we pause the render loop while rendering a raw widget, the ticks can
     // really back up. While this wouldn't necessarily be a bad thing (just some
     // extra CPU), it causes `Handle.data()` to deadlock if called too quickly.

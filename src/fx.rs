@@ -5,7 +5,7 @@ use ratatui::{buffer::Buffer, layout::Rect, Frame};
 use tachyonfx::{CellFilter, CellIterator, Duration, Effect, EffectRenderer, EffectTimer, Shader};
 
 use crate::{
-    dashboard::RENDER_INTERVAL,
+    dashboard::render_interval,
     events::{Broadcast, Event},
     widget::{BoxWidget, Placement, Widget},
 };
@@ -31,7 +31,7 @@ impl Widget for Animated {
                 return Ok(());
             }
 
-            frame.render_effect(effect, area, RENDER_INTERVAL.into());
+            frame.render_effect(effect, area, render_interval().into());
         }
 
         Ok(())

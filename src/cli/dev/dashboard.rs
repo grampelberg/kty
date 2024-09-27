@@ -1,4 +1,6 @@
-use std::{io::Read, iter::Iterator, os::fd::AsRawFd, pin::Pin, task::Context};
+use std::{
+    io::Read, iter::Iterator, os::fd::AsRawFd, pin::Pin, sync::atomic::Ordering, task::Context,
+};
 
 use cata::{Command, Container};
 use clap::Parser;
@@ -11,14 +13,14 @@ use tokio::{
     time::Duration,
 };
 
-use crate::{dashboard::Dashboard as UIDashboard, events::Event, io::Writer};
+use crate::{dashboard, events::Event, io::Writer};
 
 static STDIN_TOKEN: mio::Token = mio::Token(0);
 
 #[derive(Parser, Container)]
 pub struct Dashboard {
-    #[arg(long, default_value = "100ms")]
-    ticks: humantime::Duration,
+    #[arg(long, default_value = "10")]
+    fps: u16,
 
     #[arg(long)]
     route: Vec<String>,
@@ -91,12 +93,14 @@ impl AsyncRead for Stdin {
 #[async_trait::async_trait]
 impl Command for Dashboard {
     async fn run(&self) -> Result<()> {
+        dashboard::FPS.store(self.fps, Ordering::Relaxed);
+
         crossterm::terminal::enable_raw_mode()?;
         crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
 
         let (stop_tx, mut stop_rx) = unbounded_channel::<()>();
 
-        let dashboard = UIDashboard::builder()
+        let dashboard = dashboard::Dashboard::builder()
             .client(kube::Client::try_default().await?)
             .build()
             .start(Stdin::new()?, LocalWriter { stop: stop_tx })?;
