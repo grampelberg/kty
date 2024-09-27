@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::{
-    nav::{exit_keys, move_cursor, Movement},
+    nav::{exit_keys, move_cursor, Movement, Shrink},
     Widget,
 };
 use crate::events::{Broadcast, Event, Keypress};
@@ -99,7 +99,7 @@ impl Widget for Text {
 
         #[allow(clippy::cast_possible_truncation)]
         if let Some(Movement::X(x)) = move_cursor(key, area) {
-            self.pos = self.pos.saturating_add_signed(x);
+            self.pos = self.pos.saturating_add_signed(x.shrink());
 
             return Ok(Broadcast::Consumed);
         }

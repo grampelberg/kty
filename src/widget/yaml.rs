@@ -7,7 +7,7 @@ use eyre::Result;
 use kube::Resource;
 use ratatui::{
     buffer::Buffer,
-    layout::{Position, Rect},
+    layout::Rect,
     text::Line,
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -22,7 +22,7 @@ use syntect::{
 use syntect_tui::into_span;
 
 use super::{
-    nav::{move_cursor, Movement},
+    nav::{move_cursor, BigPosition, Movement, Shrink},
     Widget, WIDGET_VIEWS_VEC,
 };
 use crate::{
@@ -67,7 +67,7 @@ fn to_lines(txt: &str) -> Vec<Line> {
 // - See logs for performance improvements (eg. only render visible lines).
 pub struct Yaml {
     txt: String,
-    position: Position,
+    position: BigPosition,
 }
 
 impl Yaml {
@@ -83,7 +83,7 @@ impl Yaml {
 
         Self {
             txt,
-            position: Position::default(),
+            position: BigPosition::default(),
         }
     }
 
@@ -120,11 +120,12 @@ impl Widget for Yaml {
         self.position.y = self
             .position
             .y
-            .clamp(0, (lines.len() as u16).saturating_sub(area.height));
+            .clamp(0, lines.len().saturating_sub(area.height.into()) as u32);
 
+        // TODO: move to a viewport so that the scroll is not truncated.
         frame.render_widget(
             Paragraph::new(lines)
-                .scroll((self.position.y, self.position.x))
+                .scroll(self.position.shrink())
                 .block(Block::default().borders(Borders::ALL)),
             area,
         );

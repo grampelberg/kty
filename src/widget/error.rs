@@ -9,10 +9,7 @@ use ratatui::{
     Frame,
 };
 
-use super::{
-    nav::{move_cursor, Movement},
-    Placement, Widget,
-};
+use super::{nav::move_cursor, Placement, Widget};
 use crate::events::{Broadcast, Event, StringError};
 
 #[derive(Default)]
@@ -48,8 +45,7 @@ impl Widget for Error {
         };
 
         match move_cursor(key, area) {
-            Some(Movement::X(x)) => self.position.x = self.position.x.saturating_add_signed(x),
-            Some(Movement::Y(y)) => self.position.y = self.position.y.saturating_add_signed(y),
+            Some(m) => self.position = m.saturating_adjust(self.position),
             None => return Ok(Broadcast::Exited),
         }
 

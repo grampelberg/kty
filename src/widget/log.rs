@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ansi_to_tui::IntoText;
 use color_eyre::{Section, SectionExt};
 use eyre::{eyre, Report, Result};
 use futures::{
@@ -11,8 +12,9 @@ use k8s_openapi::api::core::v1::Pod;
 use kube::{api::LogParams, Api, ResourceExt};
 use ratatui::{
     buffer::Buffer,
-    layout::{Position, Rect},
+    layout::Rect,
     style::{palette::tailwind, Style},
+    text::Text,
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
@@ -22,7 +24,7 @@ use tokio::{
 };
 
 use super::{
-    nav::{move_cursor, Movement},
+    nav::{move_cursor, BigPosition, Movement},
     tabs::Tab,
     viewport::Viewport,
     Widget, WIDGET_VIEWS,
@@ -35,13 +37,13 @@ use crate::{
     },
 };
 
-pub struct Log {
+pub struct Log<'a> {
     task: Option<JoinHandle<Result<()>>>,
 
-    rx: mpsc::UnboundedReceiver<String>,
-    buffer: Vec<String>,
+    rx: mpsc::UnboundedReceiver<Option<String>>,
+    buffer: Vec<Text<'a>>,
 
-    position: Position,
+    position: BigPosition,
 }
 
 // TODO:
@@ -53,7 +55,7 @@ pub struct Log {
 // - Convert into something more general, this is fundamentally the same thing
 //   as the yaml widget - but without the syntax highlighting. There should
 //   probably be an "editor" widget that takes something to populate the lines.
-impl Log {
+impl Log<'_> {
     #[allow(clippy::blocks_in_conditions)]
     #[tracing::instrument(skip(client, pod), fields(activity = "pod.logs"))]
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
@@ -80,7 +82,7 @@ impl Log {
             rx,
             buffer: Vec::new(),
 
-            position: Position::default(),
+            position: BigPosition::default(),
         }
     }
 
@@ -95,11 +97,22 @@ impl Log {
             .build()
     }
 
-    fn update(&mut self) -> u16 {
+    fn update(&mut self) -> u32 {
         let mut i = 0;
 
         while let Ok(line) = self.rx.try_recv() {
-            self.buffer.push(line);
+            if let Some(line) = line {
+                match line.into_text() {
+                    Ok(l) => self.buffer.push(l),
+                    Err(err) => {
+                        tracing::debug!(err = ?err, "failed to parse log line");
+                        self.buffer.push(Text::from(line));
+                    }
+                }
+            } else {
+                self.buffer = Vec::new();
+            }
+
             i += 1;
         }
 
@@ -107,7 +120,7 @@ impl Log {
     }
 }
 
-impl Widget for Log {
+impl Widget for Log<'_> {
     fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
@@ -130,10 +143,11 @@ impl Widget for Log {
             .position
             .y
             .saturating_add(lines)
-            .saturating_add(area.height)
-            >= self.buffer.len() as u16
+            .saturating_add(area.height.into())
+            >= self.buffer.len() as u32
         {
-            self.position.y = u16::MAX;
+            // See warning for move_cursor for why this somewhat ridiculous dance occurs.
+            self.position.y = i32::MAX as u32;
         }
 
         if self.task.as_ref().map_or(false, JoinHandle::is_finished) {
@@ -178,7 +192,7 @@ impl Widget for Log {
     }
 }
 
-impl Drop for Log {
+impl Drop for Log<'_> {
     fn drop(&mut self) {
         if let Some(task) = self.task.as_ref() {
             task.abort();
@@ -190,7 +204,7 @@ impl Drop for Log {
 fn log_stream<'a>(
     client: kube::Client,
     pod: Arc<Pod>,
-    tx: UnboundedSender<String>,
+    tx: UnboundedSender<Option<String>>,
     params: LogParams,
     retry: bool,
 ) -> BoxFuture<'a, Result<()>> {
@@ -208,7 +222,7 @@ fn log_stream<'a>(
         let mut all_logs = stream::select_all(containers.into_iter().map(AsyncBufReadExt::lines));
 
         while let Some(line) = all_logs.try_next().await? {
-            tx.send(line)?;
+            tx.send(Some(line))?;
         }
 
         tracing::debug!(pod = pod.name_any(), "stream ended");
@@ -220,7 +234,12 @@ fn log_stream<'a>(
         // duplicated. Before the restart, we send a simple message to tell the user
         // what happened.
         if retry {
-            tx.send("Stream terminated, retrying without previous logs".to_string())?;
+            // Reset the contents of the buffer.
+            tx.send(None)?;
+            tx.send(Some(
+                "Stream terminated, retrying without previous logs".to_string(),
+            ))?;
+            tx.send(Some("-".repeat(20).to_string()))?;
 
             let mut new_params = params.clone();
             new_params.previous = false;

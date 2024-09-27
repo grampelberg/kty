@@ -1,43 +1,66 @@
-use ansi_to_tui::IntoText;
 use bon::Builder;
 use eyre::Result;
-use itertools::Itertools;
 use ratatui::{
-    layout::{Position, Rect},
+    layout::{Margin, Offset, Rect},
     text::Text,
-    widgets::Paragraph,
+    widgets::{Scrollbar, ScrollbarState},
     Frame,
 };
 
-use super::Widget;
+use super::{
+    nav::{BigPosition, Shrink},
+    Widget,
+};
 
 #[derive(Builder)]
 pub struct Viewport<'a> {
-    buffer: &'a Vec<String>,
+    buffer: &'a Vec<Text<'a>>,
     #[builder(default)]
-    view: Position,
+    view: BigPosition,
+}
+
+impl Viewport<'_> {
+    fn content(&mut self, frame: &mut Frame, area: Rect) {
+        let y: usize = self.view.y.shrink();
+
+        let start = y.clamp(0, self.buffer.len().saturating_sub(area.height.into()));
+        let end = y
+            .saturating_add(area.height.into())
+            .clamp(0, self.buffer.len());
+
+        for (i, line) in self.buffer[start..end].iter().enumerate() {
+            frame.render_widget(
+                line,
+                area.inner(Margin {
+                    vertical: 0,
+                    horizontal: 1,
+                })
+                .offset(Offset {
+                    x: 0,
+                    y: i.shrink(),
+                }),
+            );
+        }
+    }
+
+    fn scroll(&self, frame: &mut Frame, area: Rect) {
+        if self.buffer.len() <= area.height as usize {
+            return;
+        }
+
+        let scrollbar = Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
+            .track_symbol(Some("|"));
+
+        let mut state = ScrollbarState::new(self.buffer.len()).position(self.view.y as usize);
+
+        frame.render_stateful_widget(scrollbar, area, &mut state);
+    }
 }
 
 impl<'a> Widget for Viewport<'a> {
-    #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        self.view.y = self
-            .view
-            .y
-            .clamp(0, (self.buffer.len() as u16).saturating_sub(area.height));
-        let start = self.view.y as usize;
-        let end = self
-            .view
-            .y
-            .saturating_add(area.height)
-            .clamp(0, self.buffer.len() as u16) as usize;
-
-        let txt = self.buffer[start..end]
-            .iter()
-            .map(|l| l.as_str().into_text())
-            .fold_ok(Text::default(), |txt, l| txt + l)?;
-
-        frame.render_widget(Paragraph::new(txt), area);
+        self.content(frame, area);
+        self.scroll(frame, area);
 
         Ok(())
     }

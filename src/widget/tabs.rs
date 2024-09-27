@@ -18,7 +18,7 @@ use super::{
 use crate::{
     events::{Broadcast, Event},
     fx::{horizontal_wipe, Start},
-    widget::nav::{move_cursor, Movement},
+    widget::nav::{move_cursor, Movement, Shrink},
 };
 
 #[derive(Builder)]
@@ -64,7 +64,7 @@ impl Widget for Bar {
         if let Some(Movement::X(x)) = move_cursor(key, area) {
             self.idx = self
                 .idx
-                .wrapping_add_signed(x.into())
+                .wrapping_add_signed(x.shrink())
                 .clamp(0, self.items.len().saturating_sub(1));
 
             return Ok(Broadcast::Selected(self.idx));

@@ -16,7 +16,7 @@ use tachyonfx::{fx, EffectTimer, Interpolation};
 use super::{
     error::Error,
     input::Text,
-    nav::{move_cursor, Movement},
+    nav::{move_cursor, Movement, Shrink},
     view::{Element, View},
     BoxWidget, Widget,
 };
@@ -158,7 +158,7 @@ where
                 self.view
                     .selected()
                     .unwrap_or_default()
-                    .saturating_add_signed(y.into()),
+                    .saturating_add_signed(y.shrink()),
             ));
 
             return Ok(Broadcast::Consumed);
