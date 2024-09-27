@@ -175,26 +175,21 @@ impl Widget for Log<'_> {
             }
         }
 
-        let block = Block::default().borders(Borders::ALL);
-
-        let inner = block.inner(area);
-
         let result = Viewport::builder()
+            .block(Block::default().borders(Borders::ALL))
             .buffer(&self.buffer)
             .view(self.position)
             .build()
-            .draw(frame, inner);
+            .draw(frame, area);
 
         if self.task.is_none() {
             frame.render_widget(
                 Paragraph::new("Log stream ended, come back to restart")
                     .style(Style::default().fg(tailwind::RED.c300))
                     .centered(),
-                inner,
+                area,
             );
         }
-
-        frame.render_widget(block, area);
 
         result
     }

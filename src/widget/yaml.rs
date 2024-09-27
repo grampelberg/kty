@@ -127,8 +127,6 @@ impl Widget for Yaml {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let block = Block::default().borders(Borders::ALL);
-        let inner = block.inner(area);
         let txt = self.buffer.borrow_lines();
 
         self.position.y = self.position.y.clamp(
@@ -138,14 +136,11 @@ impl Widget for Yaml {
 
         let pos = self.position;
 
-        let result = Viewport::builder()
+        Viewport::builder()
+            .block(Block::default().borders(Borders::ALL))
             .buffer(txt)
             .view(pos)
             .build()
-            .draw(frame, inner);
-
-        frame.render_widget(block, area);
-
-        result
+            .draw(frame, area)
     }
 }

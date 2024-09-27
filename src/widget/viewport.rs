@@ -3,7 +3,7 @@ use eyre::Result;
 use ratatui::{
     layout::{Margin, Offset, Rect},
     text::Text,
-    widgets::{Clear, Scrollbar, ScrollbarState},
+    widgets::{Block, Clear, Scrollbar, ScrollbarState},
     Frame,
 };
 
@@ -14,6 +14,7 @@ use super::{
 
 #[derive(Builder)]
 pub struct Viewport<'a> {
+    block: Option<Block<'a>>,
     buffer: &'a Vec<Text<'a>>,
     #[builder(default)]
     view: BigPosition,
@@ -65,6 +66,15 @@ impl Viewport<'_> {
 impl<'a> Widget for Viewport<'a> {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         frame.render_widget(Clear, area);
+
+        let area = if let Some(block) = self.block.as_ref() {
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+
+            inner
+        } else {
+            area
+        };
 
         self.content(frame, area);
         self.scroll(frame, area);
