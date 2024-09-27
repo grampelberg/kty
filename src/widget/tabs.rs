@@ -2,8 +2,9 @@ use bon::Builder;
 use eyre::Result;
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Position, Rect},
     style::{Modifier, Style},
+    symbols,
     text::{Line, Span, Text},
     widgets::{Block, Borders},
     Frame,
@@ -112,6 +113,39 @@ impl Widget for Bar {
     }
 }
 
+// This assumes the placement of a bar is Length(2). It'll need to change if
+// that is ever adjusted.
+fn connector(frame: &mut Frame, area: Rect) {
+    let x_offset = area.x;
+    let y_offset = area.y + 2;
+
+    let bottom_left = (
+        symbols::line::VERTICAL_RIGHT,
+        Position {
+            x: x_offset,
+            y: y_offset,
+        },
+    );
+
+    let bottom_right = (
+        symbols::line::VERTICAL_LEFT,
+        Position {
+            x: x_offset + area.width - 1,
+            y: y_offset,
+        },
+    );
+
+    for (sym, point) in [bottom_left, bottom_right] {
+        let Some(cell) = frame.buffer_mut().cell_mut(point) else {
+            continue;
+        };
+
+        if cell.symbol() != " " {
+            cell.set_symbol(sym).set_style(Style::default());
+        }
+    }
+}
+
 pub struct TabbedView {
     items: Vec<Tab>,
     current: usize,
@@ -187,6 +221,9 @@ impl Widget for TabbedView {
         if let Err(err) = self.view.draw(frame, area) {
             self.view.push(Error::from(err).boxed().into());
         }
+
+        // When drawing borders, the connector between components needs to be drawn.
+        connector(frame, area);
 
         Ok(())
     }
