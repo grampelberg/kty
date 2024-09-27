@@ -24,7 +24,7 @@ use tokio::{
 };
 
 use super::{
-    nav::{move_cursor, BigPosition, Movement},
+    nav::{move_cursor, BigPosition, Movement, Shrink},
     tabs::Tab,
     viewport::Viewport,
     Widget, WIDGET_VIEWS,
@@ -149,6 +149,14 @@ impl Widget for Log<'_> {
             // See warning for move_cursor for why this somewhat ridiculous dance occurs.
             self.position.y = i32::MAX as u32;
         }
+
+        self.position.y = self.position.y.clamp(
+            0,
+            self.buffer
+                .len()
+                .saturating_sub(usize::from(area.height))
+                .shrink(),
+        );
 
         if self.task.as_ref().map_or(false, JoinHandle::is_finished) {
             let task = self.task.take().expect("task is finished");
