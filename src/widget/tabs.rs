@@ -1,5 +1,6 @@
 use bon::Builder;
 use eyre::Result;
+use itertools::Itertools;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Position, Rect},
@@ -85,13 +86,21 @@ impl Widget for Bar {
                 .collect::<Vec<_>>(),
             ));
 
-        let layout =
-            Layout::horizontal(std::iter::repeat(Constraint::Fill(1)).take(self.items.len()))
-                .spacing(1)
-                .split(border.inner(area));
+        let layout = Layout::horizontal(
+            Itertools::intersperse(
+                std::iter::repeat(Constraint::Fill(1)),
+                Constraint::Length(1),
+            )
+            .take(self.items.len() * 2 - 1),
+        )
+        .split(border.inner(area));
 
-        for (i, (area, txt)) in layout.iter().zip(self.items.iter()).enumerate() {
-            let style = if i == self.idx {
+        for (i, (area, txt)) in layout
+            .iter()
+            .zip(Itertools::intersperse(self.items.iter(), &"|".to_string()))
+            .enumerate()
+        {
+            let style = if i == self.idx * 2 {
                 self.style
             } else {
                 Style::default()
