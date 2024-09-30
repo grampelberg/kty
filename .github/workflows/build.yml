@@ -93,16 +93,16 @@ jobs:
       - name: tags
         run: git fetch --prune --unshallow --tags
 
+      - name: Install toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: cargo-bins/cargo-binstall@main
       - uses: taiki-e/install-action@v2
         with:
           tool: git-cliff
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-          mise_toml: |
-            [tools]
-            helm = "latest"
-            just = "latest"
 
       - name: helm
         run: |

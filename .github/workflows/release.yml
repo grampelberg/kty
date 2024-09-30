@@ -115,13 +115,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: cargo-bins/cargo-binstall@main
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-          mise_toml: |
-            [tools]
-            helm = "latest"
-            just = "latest"
 
       - uses: actions/download-artifact@v4
         with:
