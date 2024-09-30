@@ -1,0 +1,315 @@
+---
+title: 'Write Your Next Kubernetes Controller in Rust'
+date: 2024-09-30
+byline: Thomas Rampelberg
+---
+
+Whenever it is time to write something that interacts directly with Kubernetes,
+I have always recommended using golang. Between [client-go][client-go],
+[controller-runtime][controller-runtime] and [kubebuilder][kubebuilder], other
+languages just haven't been mature enough to build something comprehensive. When
+using their bindings, I'd find some functionality that was missing or
+documentation that was lacking which would end up being a blocker.
+
+When it came time to get started with [kty][kty], I wanted to give the rust
+ecosystem a try. Rust has a mature ecosystem around the pieces that weren't
+Kubernetes specific - ssh via [russh] and TUI functionality via
+[ratatui][ratatui]. That said, interacting with your cluster is the whole point
+of kty. Would [kube-rs][kube-rs] be enough, or would I need to use golang purely
+because I had to interact with the Kubernetes API?
+
+[client-go]: https://github.com/kubernetes/client-go
+[controller-runtime]: https://github.com/kubernetes-sigs/controller-runtime
+[kubebuilder]: https://github.com/kubernetes-sigs/kubebuilder
+[kty]: https://kty.dev
+[russh]: https://github.com/Eugeny/russh
+[ratatui]: https://ratatui.rs
+[kube-rs]: https://kube.rs
+
+## TL;DR
+
+If you're interested in interacting with Kubernetes outside of the golang
+ecosystem, kube-rs is fantastic. It has a great API, lots of examples and
+supports everything that I would have wanted. The best parts of client-go,
+controller-runtime and kubebuilder are all rolled into one, letting you build on
+top of the rich Rust ecosystem.
+
+I've enjoyed building complex interactions between Kubernetes and `kty`. My
+recommendation has shifted from golang to rust for building applications that
+need to interact with and be aware of Kubernetes. Keep reading to understand a
+little bit more about the functionality I believe is required and the
+differences between the languages.
+
+## Resource CRUD
+
+Perhaps the most important part of interacting with Kubernetes is the ability to
+actually, you know, create, read, update and delete resources. Without that,
+what's the point?
+
+Most folks get started by working directly with `client-go`. The API there has
+always felt a little clunky to me. Because of how it is generated combined with
+golang's type system, I always ended up with something that looks a lot like
+[linkerd's API client][linkerd-api-client]. There's nothing wrong with this, it
+is just so verbose. Isn't there a better way? [controller-runtime][cr-client] is
+great! Don't dismiss it if you're not explicitly building a controller. It is a
+better API to work with and you can do everything you need to. Unlike
+`client-go`, there's no need to convert between a type and a specific library
+path (`Pod` -> `client.CoreV1().Pods("namespace").Get()`).
+
+[linkerd-api-client]:
+  https://github.com/linkerd/linkerd2/blob/main/controller/k8s/api.go#L214
+[cr-client]:
+  https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/client#example-Client-Get
+
+The `kube-rs` client iterates on the `controller-runtime` API and makes it a
+little bit more rust-like. Here's an example of how you'd use each of these side
+by side:
+
+```go
+pod := &corev1.Pod{}
+if err := c.Get(context.Background(), client.ObjectKey{
+		Namespace: "namespace",
+		Name:      "name",
+	}, pod); err != nil {
+    return err
+}
+```
+
+```rust
+let pod = Api::<Pod>::namespaced(client, "namespace").get("name").await?;
+```
+
+For those who aren't super familiar with rust, the `?` operator is a nifty way
+to allow for error propagation. The `.get()` method returns a `Result<Pod>`.
+This is an enum which is either `Ok(pod)` or `Err(error)`. `?` unpacks the value
+an immediately returns if there's an error. You can reduce all the
+`if err != nil` boilerplate!
+
+Now, getting resources is great, but that's something most clients can do. `kty`
+needs to do some more esoteric things like stream logs or run commands inside a
+container. That's where I've become frustrated in the past with other languages,
+but `kube-rs` can do it all. If you don't believe me, check out the
+comprehensive set of [examples][kube-rs-examples] that show how you can exercise
+the API. Getting a log stream is just as easy as getting a pod:
+
+[kube-rs-examples]: https://github.com/kube-rs/kube/tree/main/examples
+
+```rust
+let logs = Api::<Pod>::namespaced(client, "namespace")
+    .log_stream("my-container", &LogStreamOptions::default())
+    .await?;
+```
+
+Functionality like this has been built on top of Rust's [trait][rust-traits]
+system. Unlike golang's interfaces, traits can be defined on any type. This
+provides a whole set of [added functionality][resourceext] that is common across
+all resources. My favorite part is that you can write your own. In `kty` we have
+some generic ones to output some YAML:
+
+```rust
+pub trait Yaml<K>
+where
+    K: Resource + Serialize,
+{
+    fn to_yaml(&self) -> Result<String>;
+}
+
+impl<K> Yaml<K> for K
+where
+    K: Resource + Serialize,
+{
+    fn to_yaml(&self) -> Result<String> {
+        serde_yaml::to_string(&self).map_err(Into::into)
+    }
+}
+```
+
+There are also resource specific ones that we're using to easily format a pod
+object for display:
+
+```rust
+pub trait PodExt {
+    fn age(&self) -> TimeDelta;
+    fn ready(&self) -> String;
+    fn restarts(&self) -> String;
+    fn status(&self) -> Phase;
+    fn containers(&self, filter: Option<String>) -> Vec<Container>;
+    fn ip(&self) -> Option<IpAddr>;
+}
+```
+
+[rust-traits]: https://doc.rust-lang.org/book/ch10-02-traits.html
+[resourceext]: https://docs.rs/kube/0.47.0/kube/resource/trait.ResourceExt.html
+
+### Dynamic API
+
+My favorite part of `kube-rs` is the dynamic API. Sometimes you don't know what
+the type will be. For example, imagine that you're recursing through the
+`OwnerReferences` of a resource. Those can be anything, but you need to fetch
+the reference to see if it has any parents. With the dynamic API and its
+associated client, you can fetch any resource into a `serde_json::Value` and
+then get what you need out of it. These can be parsed into specific types
+if/when it is needed. This functionality makes it possible for `kty` to draw the
+graph of a resource.
+
+![graph](/blog/2024-09-30-use-kube-rs/graph.png)
+
+The code to fetch generic resources (or `DynamicObject`) isn't much different
+than doing it for a specific resource (or `Pod`). From an implementation
+perspective, specific resources simply have the required configuration already
+associated with themselves.
+
+```rust
+let resource = Api::namespaced_with(client, "namespace", ApiResource::from_gvk(&group_version_kind))
+    .get("foo")?;
+```
+
+## Reacting to Changes
+
+The backbone of any controller is the ability to watch resources and then react
+based on that. From the golang world, [informers][informers] solve this need.
+They effectively give you a local cache of resources that updates in real time.
+Controllers need this so that they can implement the loop of a resource changing
+and then updating state to match that.
+
+For `kty`, we needed something to keep a list of pods (and other resources)
+updated in real time. The alternative would be to use polling, which would put
+undue load on the API server and result in updates taking awhile to show up in
+the UI. It definitely helps that maintaining the local cache and its updates
+outside of the main loop makes doing rendering/state management easier.
+
+`kube-rs` solves the same problem with its [reflectors][reflectors]. I
+appreciate how each piece builds on top of the previous one. None of this is
+particularly different from the golang world, but it has been implemented with a
+clean API and really is required to build a controller.
+
+- A client lets you interact with the API.
+- A watcher provides a stream of events for some resources.
+- A reflectors takes a watcher and uses that to populate a store. That's the
+  cache containing an up-to-date copy of the resources.
+- A controller is a reflector that will run a handler whenever something
+  changes.
+
+Here's an example of how these layer together. A deployment client is created
+and a watcher is attached to that client. The writer returned from the store is
+attached to the watcher and that whole thing is thrown into a background task.
+
+```rust
+let api: Api<Deployment> = Api::all(client);
+
+let (reader, writer) = reflector::store();
+let watch = reflector(writer, watcher(api, Default::default()))
+    .default_backoff()
+    .touched_objects()
+    .for_each(|r| {
+        future::ready(match r {
+            Ok(o) => debug!("Saw {} in {}", o.name_any(), o.namespace().unwrap()),
+            Err(e) => warn!("watcher error: {e}"),
+        })
+    });
+tokio::spawn(watch);
+```
+
+[informers]:
+  https://medium.com/@jeevanragula/demystifying-kubernetes-informer-streamlining-event-driven-workflows-955285166993
+[reflectors]: https://github.com/kube-rs/kube?tab=readme-ov-file#reflectors
+
+### Managing Memory
+
+On larger clusters, or for controllers that are complex, memory usage becomes a
+problem. For controllers I've written in the past, they'll always start out with
+a 1Gi memory limit. That quickly gets raised a couple times as the pod gets OOM
+killed. There's a convenient [optimization guide][optimization] that talks about
+ways to manage your memory usage. I always appreciate when a library talks about
+some of the tradeoffs you'll run into when implementing something yourself. It
+helps me understand the system better, hopefully resulting in increased
+reliability.
+
+[optimization]: https://kube.rs/controllers/optimization/#reflector-optimization
+
+## CRD Generation and Management
+
+The last piece of the controller puzzle is the ability to create your own
+resource definition. After all, we're trying to add functionality to the cluster
+that requires some kind of configuration or state. This is where rust really
+starts shines.
+
+Resources in Kubernetes rely heavily on generated code. Of the ~2100 files in
+`client-go`, ~1700 of them were generated with a `*-gen` tool such as
+[client-gen][client-gen]. That's 80% of the repo! It is great that the raw
+resource definitions can be generated from a schema, but this usually results in
+a complex build and development process. Of course, when working with the core
+resources, this isn't a problem. It becomes something to be managed once you
+want your own resoruce definition.
+
+The tool that does this generation is [controller-gen][controller-gen]. It looks
+for specially formatted comments that have been added to structs. These dictate
+how client code is generated and it looks something like:
+
+```go
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+type Foo struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+}
+```
+
+[client-gen]: https://pkg.go.dev/k8s.io/code-generator/cmd/client-gen
+[controller-gen]: https://book.kubebuilder.io/reference/controller-gen
+
+Rust has a built-in [macro][macro] system that does the generation for you. When
+combined with traits, you get something that only generates what's needed and
+leaves the rest as shared code. Macros are integrated directly in the compiler,
+any problems immediately show up in your editor and you can reduce the debugging
+cycle of "edit" -> "generate" -> "compile" -> "test". For `kube-rs`, it'll take
+a spec and generate the rest for you:
+
+```rust
+#[derive(CustomResource, Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[kube(
+    group = "example.com",
+    version = "v1alpha1",
+    kind = "Foo",
+    namespaced,
+)]
+pub struct FooSpec {}
+```
+
+Of course, you can only use this from inside of rust. If you want to use your
+resource in a different language, you can still do the generation step. It is
+now a release process instead of a local build step.
+
+Perhaps my favorite part, you can even generate the CRD directly from rust!
+There's a `CustomResourceExt` trait which provides `.crd()`. You can take that
+and either use it from within your controller. We do this at startup in `kty` to
+ensure the definition is correct for the server. We also use [serde][serde] to
+serialize to yaml and provide an `install` command for easily adding `kty` to
+your cluster.
+
+[macro]: https://doc.rust-lang.org/reference/procedural-macros.html
+[serde]: https://serde.rs/
+
+## What's Next?
+
+When writing controllers in golang, it is recommended to use [kubebuilder][kb].
+This is `create-react-app` for Kubernetes. I've always felt like everything
+provided was a little too heavy weight. I would opt into the required tools,
+`controller-runtime`, `controller-gen` and try to avoid the rest.
+
+With `kube-rs`, I don't actually need _any_ generation tools. Being able to
+write it all from "scratch" is a great feeling. I can reason about how the
+system works a little bit better and have direct control over what's happening.
+Check out one of the [examples][version-rs] all in less than 100 lines of rust.
+
+[kb]: https://book.kubebuilder.io/
+[version-rs]: https://github.com/kube-rs/version-rs/blob/main/version.rs
+
+Kubernetes needs more controllers! Being able to react to what's happening in
+the larger cluster is a powerful tool. Next time you're thinking of doing
+something, whether it is a [kubectl plugin][kubectl-plugin] or a full blown
+controller, take rust for a spin. It'll be worth it!
+
+[kubectl-plugin]:
+  https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/

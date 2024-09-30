@@ -76,6 +76,13 @@ const config: DocsThemeConfig = {
           href="/logo-dark-500x500.png"
         />
         <link rel="icon" type="image/png" sizes="96x96" href="/ico-dark.png" />
+
+        <link
+          rel="alternate"
+          type="application/rss+xml"
+          title="Blog"
+          href="/rss.xml"
+        />
       </>
     )
   },
