@@ -8,6 +8,9 @@ export default {
       sidebar: false,
       timestamp: true,
       layout: 'default',
+      theme: {
+        typesetting: 'article',
+      },
       topContent: function TopContent() {
         const { frontMatter } = useConfig()
         const { title, byline } = frontMatter

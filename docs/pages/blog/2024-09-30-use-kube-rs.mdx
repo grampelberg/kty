@@ -65,7 +65,7 @@ The `kube-rs` client iterates on the `controller-runtime` API and makes it a
 little bit more rust-like. Here's an example of how you'd use each of these side
 by side:
 
-```go
+```go filename="Go"
 pod := &corev1.Pod{}
 if err := c.Get(context.Background(), client.ObjectKey{
 		Namespace: "namespace",
@@ -75,7 +75,7 @@ if err := c.Get(context.Background(), client.ObjectKey{
 }
 ```
 
-```rust
+```rust filename="Rust"
 let pod = Api::<Pod>::namespaced(client, "namespace").get("name").await?;
 ```
 
@@ -94,7 +94,7 @@ the API. Getting a log stream is just as easy as getting a pod:
 
 [kube-rs-examples]: https://github.com/kube-rs/kube/tree/main/examples
 
-```rust
+```rust filename="Rust"
 let logs = Api::<Pod>::namespaced(client, "namespace")
     .log_stream("my-container", &LogStreamOptions::default())
     .await?;
@@ -106,7 +106,7 @@ provides a whole set of [added functionality][resourceext] that is common across
 all resources. My favorite part is that you can write your own. In `kty` we have
 some generic ones to output some YAML:
 
-```rust
+```rust filename="Rust"
 pub trait Yaml<K>
 where
     K: Resource + Serialize,
@@ -127,7 +127,7 @@ where
 There are also resource specific ones that we're using to easily format a pod
 object for display:
 
-```rust
+```rust filename="Rust"
 pub trait PodExt {
     fn age(&self) -> TimeDelta;
     fn ready(&self) -> String;
@@ -159,7 +159,7 @@ than doing it for a specific resource (or `Pod`). From an implementation
 perspective, specific resources simply have the required configuration already
 associated with themselves.
 
-```rust
+```rust filename="Rust"
 let resource = Api::namespaced_with(client, "namespace", ApiResource::from_gvk(&group_version_kind))
     .get("foo")?;
 ```
@@ -194,7 +194,7 @@ Here's an example of how these layer together. A deployment client is created
 and a watcher is attached to that client. The writer returned from the store is
 attached to the watcher and that whole thing is thrown into a background task.
 
-```rust
+```rust filename="Rust"
 let api: Api<Deployment> = Api::all(client);
 
 let (reader, writer) = reflector::store();
@@ -246,7 +246,7 @@ The tool that does this generation is [controller-gen][controller-gen]. It looks
 for specially formatted comments that have been added to structs. These dictate
 how client code is generated and it looks something like:
 
-```go
+```go filename="Go"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
@@ -266,7 +266,7 @@ any problems immediately show up in your editor and you can reduce the debugging
 cycle of "edit" -> "generate" -> "compile" -> "test". For `kube-rs`, it'll take
 a spec and generate the rest for you:
 
-```rust
+```rust filename="Rust"
 #[derive(CustomResource, Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[kube(
     group = "example.com",
