@@ -261,26 +261,29 @@ impl Filtered {
 
 impl Widget for Filtered {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        if let Some(Keypress::Printable('/')) = event.key() {
-            TABLE_FILTER.inc();
-
-            self.view.push(
-                Text::builder()
-                    .title("Filter")
-                    .content(self.filter.clone())
-                    .build()
-                    .boxed()
-                    .into(),
-            );
-
-            return Ok(Broadcast::Consumed);
-        }
-
         match self.view.dispatch(event, buffer, area) {
             Ok(Broadcast::Selected(idx)) => {
                 self.select_with(idx, Some(buffer))?;
 
                 Ok(Broadcast::Consumed)
+            }
+            Ok(Broadcast::Ignored) => {
+                if let Some(Keypress::Printable('/')) = event.key() {
+                    TABLE_FILTER.inc();
+
+                    self.view.push(
+                        Text::builder()
+                            .title("Filter")
+                            .content(self.filter.clone())
+                            .build()
+                            .boxed()
+                            .into(),
+                    );
+
+                    Ok(Broadcast::Consumed)
+                } else {
+                    Ok(Broadcast::Ignored)
+                }
             }
             Ok(x) => Ok(x),
             Err(e) => {
