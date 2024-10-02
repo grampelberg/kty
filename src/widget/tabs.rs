@@ -58,6 +58,7 @@ impl Bar {
 }
 
 impl Widget for Bar {
+    #[tracing::instrument(ret(level = tracing::Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
@@ -215,6 +216,7 @@ impl TabbedView {
 }
 
 impl Widget for TabbedView {
+    #[tracing::instrument(ret(level = tracing::Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         match self.view.dispatch(event, buffer, area)? {
             Broadcast::Selected(idx) => {

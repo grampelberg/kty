@@ -12,6 +12,7 @@ use ratatui::{
     Frame,
 };
 use tachyonfx::{fx, EffectTimer, Interpolation};
+use tracing::Level;
 
 use super::{
     error::Error,
@@ -148,6 +149,7 @@ impl<S> Widget for Table<S>
 where
     S: Items,
 {
+    #[tracing::instrument(ret(level = tracing::Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, _: &Buffer, area: Rect) -> Result<Broadcast> {
         let Some(key) = event.key() else {
             return Ok(Broadcast::Ignored);
@@ -260,6 +262,7 @@ impl Filtered {
 }
 
 impl Widget for Filtered {
+    #[tracing::instrument(ret(level = Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         match self.view.dispatch(event, buffer, area) {
             Ok(Broadcast::Selected(idx)) => {
@@ -268,22 +271,32 @@ impl Widget for Filtered {
                 Ok(Broadcast::Consumed)
             }
             Ok(Broadcast::Ignored) => {
-                if let Some(Keypress::Printable('/')) = event.key() {
-                    TABLE_FILTER.inc();
+                let Some(Keypress::Printable('/')) = event.key() else {
+                    return Ok(Broadcast::Ignored);
+                };
 
-                    self.view.push(
-                        Text::builder()
-                            .title("Filter")
-                            .content(self.filter.clone())
-                            .build()
-                            .boxed()
-                            .into(),
-                    );
-
-                    Ok(Broadcast::Consumed)
-                } else {
-                    Ok(Broadcast::Ignored)
+                // If there's more than one widget in the view, either there's already a filter
+                // or a detail is being drawn. In either case, don't create a new filter. The
+                // fact that this exists is unfortunate and suggests that the abstractions here
+                // are wrong. If this continues, especially in this component, it is likely time
+                // to figure out a better abstraction. Note, I've tried a couple and none have
+                // worked very well.
+                if self.view.len() > 1 {
+                    return Ok(Broadcast::Ignored);
                 }
+
+                TABLE_FILTER.inc();
+
+                self.view.push(
+                    Text::builder()
+                        .title("Filter")
+                        .content(self.filter.clone())
+                        .build()
+                        .boxed()
+                        .into(),
+                );
+
+                Ok(Broadcast::Consumed)
             }
             Ok(x) => Ok(x),
             Err(e) => {

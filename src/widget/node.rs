@@ -27,7 +27,7 @@ pub struct List {
 #[bon::bon]
 impl List {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(skip(client), fields(activity = "node.list"))]
+    #[tracing::instrument(skip_all, fields(activity = "node.list"))]
     #[builder]
     pub fn new(client: kube::Client) -> Self {
         WIDGET_VIEWS.node.list.inc();

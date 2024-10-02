@@ -59,7 +59,7 @@ impl Key {
         self.spec.expiration < Utc::now()
     }
 
-    #[tracing::instrument(skip(self, client))]
+    #[tracing::instrument(skip_all)]
     pub async fn update(&self, client: kube::Client) -> Result<()> {
         Api::<Key>::default_namespaced(client)
             .patch(
@@ -122,7 +122,7 @@ impl Authenticate for PublicKey {
     // - get the user from owner references
     // - validate the expiration
     // - should there be a status field or condition for an existing key?
-    #[tracing::instrument(skip(self, ctrl))]
+    #[tracing::instrument(skip_all)]
     async fn authenticate(&self, ctrl: &Controller) -> Result<Option<Identity>> {
         let keys: Api<Key> = Api::default_namespaced(ctrl.client()?);
 

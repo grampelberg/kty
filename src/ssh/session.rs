@@ -106,7 +106,7 @@ impl Session {
         self.features.contains(feature)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn send_code(&mut self) -> Result<Auth> {
         CODE_GENERATED.inc();
 
@@ -143,7 +143,7 @@ impl Session {
     }
 
     // TODO: need to handle 429 responses and backoff.
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip_all)]
     async fn authenticate_code(&mut self) -> Result<Auth> {
         let (code, key) = {
             let State::CodeSent(code, key) = &self.state else {
@@ -247,7 +247,7 @@ impl server::Handler for Session {
     }
 
     // TODO: add some kind of event to log successful authentication.
-    #[tracing::instrument(skip(self, _session))]
+    #[tracing::instrument(skip_all)]
     async fn auth_succeeded(&mut self, _session: &mut server::Session) -> Result<()> {
         let State::Authenticated(identity) = &self.state else {
             UNEXPECTED_STATE
@@ -267,7 +267,7 @@ impl server::Handler for Session {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, channel))]
+    #[tracing::instrument(skip_all)]
     async fn channel_open_session(
         &mut self,
         channel: russh::Channel<server::Msg>,
@@ -393,7 +393,7 @@ impl server::Handler for Session {
         Ok(true)
     }
 
-    #[tracing::instrument(skip(self, data))]
+    #[tracing::instrument(skip_all)]
     async fn data(&mut self, _: ChannelId, data: &[u8], _: &mut server::Session) -> Result<()> {
         TOTAL_BYTES.inc_by(data.len() as u64);
 

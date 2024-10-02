@@ -94,60 +94,68 @@ impl View {
         self.widgets.pop().map(|element| element.widget)
     }
 
-    fn layers<'a>(
-        widgets: impl Iterator<Item = &'a mut Element>,
-        area: Rect,
-    ) -> Vec<Vec<(Rect, &'a mut Element)>> {
+    pub fn len(&self) -> usize {
+        self.widgets.len()
+    }
+
+    fn layers(&mut self, area: Rect) -> Vec<Vec<(usize, Rect, &mut Element)>> {
+        let show_all = self.show_all;
+
         // chunk_by only works with *consecutive* elements, so we need to first sort the
         // widgets.
-        let chunks = widgets
-            .sorted_by(|a, b| a.zindex().cmp(&b.zindex()))
-            .chunk_by(|widget| widget.zindex());
+        let chunks = self
+            .widgets
+            .iter_mut()
+            .enumerate()
+            .sorted_by(|(_, a), (_, b)| a.zindex().cmp(&b.zindex()))
+            .chunk_by(|(_, widget)| widget.zindex());
 
-        chunks
-            .into_iter()
-            .map(|(_, layer)| {
-                let layer: Vec<_> = layer.collect();
+        let layers = chunks.into_iter().map(|(_, layer)| {
+            let layer: Vec<_> = layer.collect();
 
-                let areas =
-                    Layout::vertical(layer.iter().map(|widget| widget.placement().vertical))
-                        .split(area);
+            let areas =
+                Layout::vertical(layer.iter().map(|(_, widget)| widget.placement().vertical))
+                    .split(area);
 
-                areas.iter().copied().zip(layer).collect()
-            })
-            .collect()
+            areas
+                .iter()
+                .copied()
+                .zip(layer)
+                .map(|(area, (i, widget))| (i, area, widget))
+                .collect()
+        });
+
+        if show_all {
+            layers.collect()
+        } else {
+            layers.tail(1).collect()
+        }
     }
 }
 
 impl Widget for View {
+    #[tracing::instrument(ret(level = tracing::Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        for (i, el) in self.widgets.iter_mut().enumerate().rev() {
-            propagate!(el.dispatch(event, buffer, area), {
-                if el.terminal {
-                    return Ok(Broadcast::Exited);
-                }
+        for layer in self.layers(area) {
+            for (idx, area, el) in layer {
+                tracing::trace!(name = el._name(), "dispatching event");
+                propagate!(el.dispatch(event, buffer, area), {
+                    if el.terminal {
+                        return Ok(Broadcast::Exited);
+                    }
 
-                self.widgets.remove(i);
-            });
+                    self.widgets.remove(idx);
+                });
+            }
         }
 
         Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let show_all = self.show_all;
-
-        let mut layers = View::layers(self.widgets.iter_mut(), area);
-
-        let mut layers: Box<dyn Iterator<Item = _>> = Box::new(layers.iter_mut());
-
-        if !show_all {
-            layers = Box::new(layers.tail(1));
-        }
-
-        for layer in layers {
-            for (area, widget) in layer {
-                widget.draw(frame, *area)?;
+        for layer in self.layers(area) {
+            for (_, area, widget) in layer {
+                widget.draw(frame, area)?;
             }
         }
 

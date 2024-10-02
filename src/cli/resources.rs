@@ -42,7 +42,7 @@ pub struct Crd {}
 #[async_trait::async_trait]
 impl Command for Crd {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "resources.crd"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "resources.crd"))]
     async fn run(&self) -> Result<()> {
         let mut serializer = serde_yaml::Serializer::new(std::io::stdout());
         for resource in crate::resources::all() {
@@ -62,7 +62,7 @@ pub struct Delete {
 #[async_trait::async_trait]
 impl Command for Delete {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "resources.delete"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "resources.delete"))]
     async fn run(&self) -> Result<()> {
         let client = Client::try_default().await?;
 
@@ -102,7 +102,7 @@ pub struct Install {
 #[async_trait::async_trait]
 impl Command for Install {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "resources.install"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "resources.install"))]
     async fn run(&self) -> Result<()> {
         let namespace = namespace(self.namespace.as_ref()).await?;
 

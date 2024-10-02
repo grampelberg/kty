@@ -227,7 +227,7 @@ impl StreamMetrics<'_> {
     }
 }
 
-#[tracing::instrument(skip(src, dst))]
+#[tracing::instrument(skip_all)]
 async fn stream(
     mut src: impl AsyncRead + AsyncWrite + Unpin + Send,
     mut dst: impl AsyncRead + AsyncWrite + Unpin + Send,

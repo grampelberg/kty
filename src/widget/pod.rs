@@ -29,7 +29,7 @@ pub struct List {
 
 impl List {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(skip(client), fields(activity = "pod.list"))]
+    #[tracing::instrument(skip_all, fields(activity = "pod.list"))]
     pub fn new(client: kube::Client) -> Self {
         WIDGET_VIEWS.pod.list.inc();
 

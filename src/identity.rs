@@ -40,7 +40,7 @@ impl Identity {
 
 #[async_trait::async_trait]
 impl Authenticate for Identity {
-    #[tracing::instrument(skip(self, ctrl))]
+    #[tracing::instrument(skip_all)]
     async fn authenticate(&self, ctrl: &Controller) -> Result<Option<Identity>> {
         let client = self.client(ctrl)?;
 

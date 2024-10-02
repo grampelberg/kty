@@ -70,17 +70,31 @@ impl Command for Root {
             return Err(eyre!("log level already set"));
         }
 
-        let filter = EnvFilter::builder()
+        let fmt_filter = EnvFilter::builder()
             .with_default_directive(self.verbosity.log_level_filter().as_trace().into())
             .from_env_lossy();
 
         let fmt = tracing_subscriber::fmt::layer()
             .pretty()
             .with_writer(Mutex::new(self.log_file.clone()))
-            .with_filter(filter);
+            .with_filter(fmt_filter);
+
+        let tree_filter = EnvFilter::from_env("TRACING_TREE");
+
+        let tree = tracing_tree::HierarchicalLayer::default()
+            .with_writer(Mutex::new(self.log_file.clone()))
+            .with_indent_lines(true)
+            .with_indent_amount(2)
+            .with_thread_names(true)
+            .with_thread_ids(true)
+            .with_verbose_exit(true)
+            .with_verbose_entry(true)
+            .with_targets(true)
+            .with_filter(tree_filter);
 
         let registry = tracing_subscriber::registry()
             .with(fmt)
+            .with(tree)
             .with(ErrorLayer::default());
 
         if self.no_telemetry {

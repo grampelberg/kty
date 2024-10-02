@@ -60,6 +60,18 @@ The global debug level can be overly noisy. Instead of doing `-vvvv`, try:
 RUST_LOG=none,kty=debug
 ```
 
+### Tracing Tree
+
+It can be a little difficult to reason about how events filter through the
+application. Towards that end, `dispatch` has `tracing::instrument` on it in
+most places. This can be used to render a tree based on the spans that lets you
+see what functions are being called and what their return values are. To see
+this data, you can use the same format as `RUST_LOG` and export:
+
+```bash
+TRACING_TREE=none,kty=trace
+```
+
 ## Ingress Tunnel
 
 If testing port forwarding and running the service locally (aka not on the

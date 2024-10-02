@@ -45,7 +45,7 @@ pub struct Check {
 #[async_trait::async_trait]
 impl Command for Check {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "users.check"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "users.check"))]
     async fn run(&self) -> Result<()> {
         let identity = Identity::new(self.id.clone(), self.groups.clone());
 
@@ -101,7 +101,7 @@ enum Output {
 #[async_trait::async_trait]
 impl Command for Grant {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "users.grant"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "users.grant"))]
     async fn run(&self) -> Result<()> {
         let binding = ClusterRoleBinding {
             metadata: ObjectMeta {
@@ -179,7 +179,7 @@ pub struct Key {
 #[async_trait::async_trait]
 impl Command for Key {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(err, skip(self), fields(activity = "users.key"))]
+    #[tracing::instrument(err, skip_all, fields(activity = "users.key"))]
     async fn run(&self) -> Result<()> {
         let mut keys: Vec<PublicKey> = self
             .keys

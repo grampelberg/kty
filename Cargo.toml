@@ -87,6 +87,7 @@ tracing = "0.1.40"
 tracing-error = { version = "0.2.0", features = ["traced-error"] }
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-tree = "0.4.0"
 umask = "2.1.0"
 warp = "0.3.7"
 

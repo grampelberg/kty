@@ -57,7 +57,7 @@ pub struct Log<'a> {
 //   probably be an "editor" widget that takes something to populate the lines.
 impl Log<'_> {
     #[allow(clippy::blocks_in_conditions)]
-    #[tracing::instrument(skip(client, pod), fields(activity = "pod.logs"))]
+    #[tracing::instrument(skip_all, fields(activity = "pod.logs"))]
     pub fn new(client: kube::Client, pod: Arc<Pod>) -> Self {
         WIDGET_VIEWS.pod.log.inc();
 

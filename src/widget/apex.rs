@@ -75,6 +75,7 @@ impl Apex {
 }
 
 impl Widget for Apex {
+    #[tracing::instrument(ret(level = Level::TRACE), skip(self, buffer, area), fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         if let Event::Tunnel(Err(err)) = event {
             self.view.push(Error::from(err.message()).boxed().into());
