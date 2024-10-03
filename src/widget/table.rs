@@ -238,24 +238,23 @@ impl Filtered {
     }
 
     pub fn select(&mut self, idx: usize) -> Result<()> {
-        self.select_with(idx, None)
+        self.select_with(idx)
     }
 
-    fn select_with(&mut self, idx: usize, frame: Option<&Buffer>) -> Result<()> {
+    fn select_with(&mut self, idx: usize) -> Result<()> {
         let widget = (self.constructor)(idx, self.filter.borrow().clone())?;
 
-        let detail = Animated::builder()
-            .maybe_effect(frame.map(|_| {
-                fx::parallel(&[fx::coalesce(EffectTimer::from_ms(
+        self.view.push(
+            Animated::builder()
+                .effect(fx::coalesce(EffectTimer::from_ms(
                     500,
                     Interpolation::SineInOut,
-                ))])
-            }))
-            .widget(widget)
-            .build();
-
-        self.view
-            .push(Element::builder().widget(detail.boxed()).build());
+                )))
+                .widget(widget)
+                .build()
+                .boxed()
+                .into(),
+        );
 
         Ok(())
     }
@@ -266,7 +265,7 @@ impl Widget for Filtered {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         match self.view.dispatch(event, buffer, area) {
             Ok(Broadcast::Selected(idx)) => {
-                self.select_with(idx, Some(buffer))?;
+                self.select_with(idx)?;
 
                 Ok(Broadcast::Consumed)
             }
@@ -287,6 +286,9 @@ impl Widget for Filtered {
 
                 TABLE_FILTER.inc();
 
+                // This is explicitly *not* animated currently. The ideal animation would be to
+                // wipe up from the bottom. That doesn't really work because the filter box is
+                // empty by default. It needs more visual content to have the wipe make sense.
                 self.view.push(
                     Text::builder()
                         .title("Filter")

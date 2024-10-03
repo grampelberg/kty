@@ -22,7 +22,8 @@ git rebase -ff branch-name && git push origin branch-name
 
 On PR, CI produces a darwin-arm64 binary and helm chart. Click on any step from
 the PR and then `Summary` on the left sidebar to see the uploaded artifacts.
-Docker images are not currently build/uploaded on PR runs.
+Docker images are built to verify that the `linux-amd64` binary can be built but
+they are not pushed or uploaded anywhere.
 
 ## Environment
 
@@ -59,6 +60,8 @@ The global debug level can be overly noisy. Instead of doing `-vvvv`, try:
 ```bash
 RUST_LOG=none,kty=debug
 ```
+
+If you'd like to see backtraces on panic, set `RUST_BACKTRACE`.
 
 ### Tracing Tree
 

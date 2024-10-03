@@ -29,11 +29,39 @@
 ## Server
 
 - Move over to axum for health instead of warp.
+- Terminate the session (but not the server) on panic.
 
 ## TUI
 
 - There needs to be some way to pre-flight permissions for a component so that
   an error is shown instead of letting the component fail.
+
+- Terminal resizing isn't wired up for the dev dashboard.
+
+- The way that layers work would be better served by something with ndarray. In
+  particular, calculating what the area of a widget would be is ugly.
+
+- Add routing back in.
+
+- Calculate visibility via areas + zindex to understand what needs to be
+  rendered instead of just assuming the view will set all or only the top layer.
+
+- It feels like it'd be nice to just try to run the default command and if it
+  errors give the user the option to change. That way, going to the shell tab
+  will ~immediately jump into the pod.
+
+- Dashboard as a struct doesn't really make sense anymore, it should likely be
+  converted over to a simple function.
+
+- Move over to something like
+  [ratatui-textarea](https://github.com/rhysd/tui-textarea) for the inputs.
+
+- Add an editor to allow for creation of resources (should it just be pods?).
+
+- Animate the egress/ingress tunnel lines. In particular, it would be nice to
+  watch `Active` fade to `Listening` after a request goes through.
+
+### Nodes
 
 - Is it possible to get the kubelet logs?
 
@@ -49,43 +77,7 @@
   - This is waiting on the next release of russh as `handle.open_channel_agent`
     just landed.
 
-- There's some kind of lag happening when scrolling aggressively (aka, holding
-  down a cursor). It goes fine for ~10 items and then has a hitch in the
-  rendering.
-
-- Terminal resizing isn't wired up for the dev dashboard.
-
-- The way that layers work would be better served by something with ndarray. In
-  particular, calculating what the area of a widget would be is ugly.
-
-- Add an error screen if the ready channel is closed with an error. See
-  widget/pod.rs.
-
-- Add routing back in.
-
-- Calculate visibility via areas + zindex to understand what needs to be
-  rendered instead of just assuming the view will set all or only the top layer.
-
-- It feels like it'd be nice to just try to run the default command and if it
-  errors give the user the option to change. That way, going to the shell tab
-  will ~immediately jump into the pod.
-
-- Dashboard as a struct doesn't really make sense anymore, it should likely be
-  converted over to a simple function.
-
-- Move YAML over to viewport. Should viewport be doing syntax highlighting by
-  default? How do we do a viewport over a set of lines that require history to
-  do highlighting?
-
-- There's a bug somewhere in `log_stream`. My k3d cluster restarted and while I
-  could get all the logs, the stream wouldn't keep running - it'd terminate
-  immediately. `stern` seemed to be working fine. Recreating the cluster causedx
-  everything to work again.
-
-- Move over to something like
-  [ratatui-textarea](https://github.com/rhysd/tui-textarea) for the inputs.
-
-- Add an editor to allow for creation of resources (should it just be pods?).
+### Pods
 
 - Rethink the pod detail view. The yaml doesn't feel like the most important
   thing to look at, neither do logs. Shell feels the closest, but that's not
@@ -95,11 +87,15 @@
   _everything_ into memory (but doesn't try to render the entire thing every
   100ms).
 
-- Animate the egress/ingress tunnel lines. In particular, it would be nice to
-  watch `Active` fade to `Listening` after a request goes through.
+- Add `graph` to the pod view.
+
+### Table
+
+- Highlight filter matches in the list.
 
 ## SFTP
 
+- Get a watchman style demo working.
 - Allow globs in file paths, eg `/*/nginx**/etc/passwd`.
 - Return an error that is nicer than "no files found" when a container doesn't
   have cat/ls.
@@ -108,7 +104,6 @@
 ## SSH Functionality
 
 - Allow `ssh` directly into a pod without starting the dashboard.
-
 - How can `ssh` be shutdown without causing it to have a 1 as an exit code?
 
 ## Ingress Tunnel
@@ -126,9 +121,6 @@
 
 ## Build
 
-- Figure out why `git cliff` goes `0.2.0` -> `0.2.1` -> `0.3.0` instead of
-  `0.2.2`.
-
 - Add integration test for `kty resources install`.
 
 - Add integration test for `helm install`.
@@ -136,11 +128,6 @@
 - Move client_id and config_url to a build-time concern. I'm not sure this will
   be great for the development experience. Is there a way to have defaults but
   override them? Maybe with a dev instance of auth0?
-
-## Deployment
-
-- Add `kustomize` to allow for an easier getting started.
-- Make `helm install` work if someone's checked the repo out.
 
 ## Misc
 

@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     events::{Broadcast, Event},
-    fx::{horizontal_wipe, Start},
+    fx::{wipe, Start},
     widget::nav::{move_cursor, Movement, Shrink},
 };
 
@@ -205,7 +205,7 @@ impl TabbedView {
         self.view.push(
             self.items[idx].widget().animate(fx::parallel(&[
                 fx::coalesce(EffectTimer::from_ms(500, Interpolation::SineInOut)),
-                horizontal_wipe()
+                wipe()
                     .buffer(buffer.clone())
                     .timer(EffectTimer::from_ms(500, Interpolation::SineInOut))
                     .start(start)

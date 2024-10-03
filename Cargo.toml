@@ -96,7 +96,7 @@ warp = "0.3.7"
 workspace = true
 
 [profile.dev]
-debug = 0
+debug = 1
 split-debuginfo = "unpacked"
 
 [profile.release]

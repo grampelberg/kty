@@ -12,6 +12,7 @@ allowed-duplicate-crates = [
     "hyper",
     "itertools",
     "mio",
+    "nu-ansi-term",
     "pbkdf2",
     "regex-automata",
     "regex-syntax",

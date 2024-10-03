@@ -1,6 +1,9 @@
 #!/bin/bash
 
+export RUST_BACKTRACE=full
 export RUST_LOG=none,kty=debug
+# export TRACING_TREE=none,kty=trace
+
 export LOCAL_REGISTRY="kty:5432"
 
 # export GHCR_USER="me"
