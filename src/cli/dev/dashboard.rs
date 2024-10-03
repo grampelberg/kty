@@ -131,6 +131,7 @@ impl Drop for Dashboard {
     }
 }
 
+#[derive(Clone)]
 pub struct LocalWriter {
     stop: UnboundedSender<()>,
 }

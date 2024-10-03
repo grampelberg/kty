@@ -1,4 +1,5 @@
 use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
     sync::atomic::{AtomicU16, Ordering},
     time::Duration,
 };
@@ -66,7 +67,11 @@ impl Dashboard {
     // - `rx` has not been closed
     // - a `Event::Shutdown` has not been sent
     // They will continue to run in the background.
-    pub fn start<R>(&mut self, stdin: R, stdout: impl Writer) -> Result<UnboundedSender<Event>>
+    pub fn start<R>(
+        &mut self,
+        stdin: R,
+        stdout: impl Writer + Clone,
+    ) -> Result<UnboundedSender<Event>>
     where
         R: AsyncRead + Send + 'static,
     {
@@ -94,13 +99,25 @@ impl Dashboard {
         let rt = Builder::new_current_thread().enable_all().build()?;
         let client = self.client.clone();
 
+        let local_stdout = stdout.clone();
+
         std::thread::spawn(move || {
             TOTAL_DASHBOARD_THREADS.inc();
             ACTIVE_DASHBOARD_THREADS.inc();
 
-            if let Err(err) = rt.block_on(run(client, rx, stdout)) {
-                tracing::error!("Unhandled dashboard error: {err:?}");
-            }
+            if catch_unwind(AssertUnwindSafe(|| {
+                if let Err(err) = rt.block_on(run(client, rx, local_stdout)) {
+                    tracing::error!("Unhandled dashboard error: {err:?}");
+                }
+            }))
+            .is_err()
+            {
+                futures::executor::block_on(async move {
+                    let _result = stdout
+                        .shutdown("dashboard panicked, check logs".to_string())
+                        .await;
+                });
+            };
 
             ACTIVE_DASHBOARD_THREADS.dec();
         });
