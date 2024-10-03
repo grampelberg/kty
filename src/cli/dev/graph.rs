@@ -16,6 +16,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::{
     events::{Event, Keypress},
+    exit_keys,
     resources::ResourceGraph,
     widget::graph,
 };
@@ -61,7 +62,7 @@ impl Command for Cmd {
                     tracing::info!("key: {:?}", key);
 
                     match key {
-                        Keypress::Escape => break,
+                        exit_keys!() => break,
                         Keypress::CursorLeft => i = i.saturating_sub(1),
                         Keypress::CursorRight => i = i.saturating_add(1),
                         Keypress::CursorDown => state.next(),

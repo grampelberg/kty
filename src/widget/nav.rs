@@ -129,11 +129,11 @@ pub fn move_cursor(key: &Keypress, area: Rect) -> Option<Movement> {
         Keypress::CursorDown | Keypress::Printable('j') => Some(Movement::Y(1)),
         Keypress::Printable('H') => Some(Movement::Y(-i32::MAX)),
         Keypress::Printable('L') => Some(Movement::Y(i32::MAX)),
-        Keypress::Printable(' ' | 'f') | Keypress::Control('f') => {
-            Some(Movement::Y(i32::from(area.height)))
-        }
         Keypress::Printable('b') | Keypress::Control('b') => {
             Some(Movement::Y(-i32::from(area.height)))
+        }
+        Keypress::Printable(' ' | 'f') | Keypress::Control('f') => {
+            Some(Movement::Y(i32::from(area.height)))
         }
         Keypress::Printable('^') | Keypress::Control('a') => Some(Movement::X(-i32::MAX)),
         Keypress::Printable('$') | Keypress::Control('e') => Some(Movement::X(i32::MAX)),

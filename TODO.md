@@ -33,6 +33,8 @@
 
 ## TUI
 
+- `Help` should probably scroll.
+
 - There needs to be some way to pre-flight permissions for a component so that
   an error is shown instead of letting the component fail.
 

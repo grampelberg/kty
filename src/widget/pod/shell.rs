@@ -25,12 +25,18 @@ use tokio_util::io::ReaderStream;
 
 use crate::{
     events::{Broadcast, Event, Keypress},
+    exit_keys,
     resources::{
         container::{Container, ContainerExt},
         pod::PodExt,
         status::StatusExt,
     },
-    widget::{input, input::ContentExt, propagate, table, tabs::Tab, Raw, Widget, WIDGET_VIEWS},
+    widget::{
+        input::{self, ContentExt},
+        propagate, table,
+        tabs::Tab,
+        Raw, Widget, WIDGET_VIEWS,
+    },
 };
 
 lazy_static! {
@@ -142,8 +148,8 @@ impl Widget for Command {
             .as_ref()
             .map_or(String::new(), String::clone);
 
-        match event.key() {
-            Some(Keypress::Enter) => {
+        match event.key().unwrap_or(&Keypress::Null) {
+            Keypress::Enter => {
                 return Ok(Broadcast::Raw(Box::new(
                     ExecBuilder::default()
                         .start(Utc::now())
@@ -154,7 +160,7 @@ impl Widget for Command {
                         .build()?,
                 )))
             }
-            Some(Keypress::Escape) => return Ok(Broadcast::Exited),
+            exit_keys!() => return Ok(Broadcast::Exited),
             _ => {}
         };
 

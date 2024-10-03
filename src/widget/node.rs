@@ -8,6 +8,7 @@ use tokio::sync::oneshot;
 
 use super::{
     loading::Loading,
+    nav::exit_keys,
     propagate, table,
     tabs::{Tab, TabbedView},
     view::{Element, View},
@@ -69,11 +70,10 @@ impl Widget for List {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         propagate!(self.view.dispatch(event, buffer, area));
 
-        if matches!(event.key(), Some(Keypress::Escape)) {
-            return Ok(Broadcast::Exited);
+        match event.key().unwrap_or(&Keypress::Null) {
+            exit_keys!() => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
         }
-
-        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
@@ -127,11 +127,10 @@ impl Widget for Detail {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         propagate!(self.view.dispatch(event, buffer, area));
 
-        if matches!(event.key(), Some(Keypress::Escape)) {
-            return Ok(Broadcast::Exited);
+        match event.key().unwrap_or(&Keypress::Null) {
+            exit_keys!() => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
         }
-
-        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {

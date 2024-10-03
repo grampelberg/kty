@@ -18,6 +18,7 @@ use super::{
 };
 use crate::{
     events::{Broadcast, Event, Keypress},
+    exit_keys,
     resources::store::Store,
     widget::{pod::shell::Shell, yaml::Yaml},
 };
@@ -70,11 +71,10 @@ impl Widget for List {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         propagate!(self.view.dispatch(event, buffer, area));
 
-        if matches!(event.key(), Some(Keypress::Escape)) {
-            return Ok(Broadcast::Exited);
+        match event.key().unwrap_or(&Keypress::Null) {
+            exit_keys!() => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
         }
-
-        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
@@ -140,11 +140,10 @@ impl Widget for Detail {
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
         propagate!(self.view.dispatch(event, buffer, area));
 
-        if matches!(event.key(), Some(Keypress::Escape)) {
-            return Ok(Broadcast::Exited);
+        match event.key().unwrap_or(&Keypress::Null) {
+            exit_keys!() => Ok(Broadcast::Exited),
+            _ => Ok(Broadcast::Ignored),
         }
-
-        Ok(Broadcast::Ignored)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
