@@ -79,9 +79,10 @@ impl AsyncRead for Stdin {
 
         let waker = cx.waker().clone();
 
-        // Check for input every 100ms.
+        // Check for input every 10ms. If this is too long, the buffer will fill contain
+        // more than one keypress and parsing will fail.
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
 
             waker.wake();
         });
