@@ -4,6 +4,7 @@ use eyre::{eyre, Result};
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},
+    style::Style,
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
@@ -28,12 +29,17 @@ pub struct Text {
     title: String,
     content: Content,
     pos: u16,
+    border_style: Style,
 }
 
 #[bon::bon]
 impl Text {
     #[builder]
-    pub fn new(#[builder(into)] title: String, #[builder(default)] content: Content) -> Self {
+    pub fn new(
+        #[builder(into)] title: String,
+        #[builder(default)] content: Content,
+        #[builder(default)] border_style: Style,
+    ) -> Self {
         #[allow(clippy::cast_possible_truncation)]
         let pos = content.borrow().as_ref().map_or(0, String::len) as u16;
 
@@ -41,6 +47,7 @@ impl Text {
             title,
             content,
             pos,
+            border_style,
         }
     }
 
@@ -109,7 +116,9 @@ impl Widget for Text {
 
     #[allow(clippy::cast_possible_truncation)]
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let mut block = Block::default().borders(Borders::ALL);
+        let mut block = Block::default()
+            .borders(Borders::ALL)
+            .style(self.border_style);
 
         if !self.title.is_empty() {
             block = block.title(self.title.as_ref());

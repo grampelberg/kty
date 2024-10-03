@@ -136,7 +136,12 @@ impl View {
 impl Widget for View {
     #[tracing::instrument(ret(level = tracing::Level::TRACE), skip_all, fields(name = self._name()))]
     fn dispatch(&mut self, event: &Event, buffer: &Buffer, area: Rect) -> Result<Broadcast> {
-        for layer in self.layers(area) {
+        let mut layers = self.layers(area);
+        layers.reverse();
+
+        for mut layer in layers {
+            layer.reverse();
+
             for (idx, area, el) in layer {
                 tracing::trace!(name = el._name(), "dispatching event");
                 propagate!(el.dispatch(event, buffer, area), {
