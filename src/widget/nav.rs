@@ -28,6 +28,15 @@ pub struct BigPosition {
     pub y: u32,
 }
 
+impl From<Position> for BigPosition {
+    fn from(pos: Position) -> Self {
+        Self {
+            x: u32::from(pos.x),
+            y: u32::from(pos.y),
+        }
+    }
+}
+
 pub trait Shrink<T> {
     fn shrink(self) -> T;
 }
