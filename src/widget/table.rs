@@ -293,6 +293,7 @@ impl Widget for Filtered {
                     Text::builder()
                         .title("Filter")
                         .content(self.filter.clone())
+                        .border_style(style::Style::default().fg(tailwind::BLUE.c500))
                         .build()
                         .boxed()
                         .into(),

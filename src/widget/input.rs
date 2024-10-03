@@ -118,7 +118,8 @@ impl Widget for Text {
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let mut block = Block::default()
             .borders(Borders::ALL)
-            .style(self.border_style);
+            .border_style(self.border_style)
+            .title_style(Style::reset());
 
         if !self.title.is_empty() {
             block = block.title(self.title.as_ref());
