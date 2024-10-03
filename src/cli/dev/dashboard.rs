@@ -95,8 +95,7 @@ impl Command for Dashboard {
     async fn run(&self) -> Result<()> {
         dashboard::FPS.store(self.fps, Ordering::Relaxed);
 
-        crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+        ratatui::init();
 
         let (stop_tx, mut stop_rx) = unbounded_channel::<()>();
 
@@ -126,8 +125,7 @@ impl Command for Dashboard {
 
 impl Drop for Dashboard {
     fn drop(&mut self) {
-        crossterm::terminal::disable_raw_mode().unwrap();
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).unwrap();
+        ratatui::restore();
     }
 }
 
